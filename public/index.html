@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Event Planning Agent</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f7f7f5; --border: #e5e5e3; --border2: #d0d0cc;
+    --text: #1a1a1a; --text2: #6b6b68; --text3: #9b9b98;
+    --accent: #1a1a1a; --radius: 8px; --font: system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1a1a; --bg2: #252525; --border: #333; --border2: #444; --text: #f0f0f0; --text2: #a0a0a0; --text3: #666; --accent: #f0f0f0; }
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; justify-content: center; padding: 2rem 1rem; }
+  .wrap { width: 100%; max-width: 720px; }
+  .hdr { margin-bottom: 1.5rem; }
+  .hdr h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+  .hdr p { font-size: 13px; color: var(--text2); }
+  .prog { display: flex; gap: 4px; margin-bottom: 1.75rem; }
+  .pd { height: 3px; flex: 1; border-radius: 2px; background: var(--border); transition: background .3s; }
+  .pd.done { background: var(--text2); } .pd.active { background: var(--accent); }
+  .step-lbl { font-size: 11px; font-weight: 500; color: var(--text3); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 1rem; }
+  .form-body { display: flex; flex-direction: column; gap: 11px; }
+  .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 9px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field.full { grid-column: 1/-1; }
+  label { font-size: 12px; color: var(--text2); }
+  input, textarea, select {
+    font-size: 13px; font-family: var(--font); color: var(--text);
+    background: var(--bg); border: .5px solid var(--border2);
+    border-radius: var(--radius); padding: 7px 9px; width: 100%; outline: none;
+    transition: border-color .15s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--text2); }
+  textarea { resize: vertical; line-height: 1.55; min-height: 62px; }
+  select { appearance: none; cursor: pointer; }
+  .cbr { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text2); cursor: pointer; padding: 1px 0; }
+  .cbr input[type=checkbox] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .sec-div { font-size: 11px; font-weight: 500; color: var(--text3); letter-spacing: .05em; text-transform: uppercase; border-bottom: .5px solid var(--border); padding-bottom: 5px; margin-top: 4px; }
+  .dl { display: flex; flex-direction: column; gap: 6px; }
+  .dr { display: flex; gap: 6px; align-items: center; }
+  .dr input, .dr select { flex: 1; }
+  .dur { max-width: 68px !important; }
+  .styp { max-width: 100px !important; }
+  .rmv { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 19px; padding: 0 2px; line-height: 1; flex-shrink: 0; }
+  .rmv:hover { color: var(--text); }
+  .addb { background: none; border: .5px dashed var(--border2); border-radius: var(--radius); padding: 7px; font-size: 12px; color: var(--text2); cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .addb:hover { background: var(--bg2); }
+  .membar { display: flex; align-items: center; gap: 8px; background: var(--bg2); border: .5px solid var(--border); border-radius: var(--radius); padding: 8px 11px; }
+  .membar span { font-size: 12px; color: var(--text2); flex: 1; }
+  .mb { background: none; border: .5px solid var(--border2); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--text2); cursor: pointer; font-family: var(--font); white-space: nowrap; }
+  .mb:hover { background: var(--bg); } .mb:disabled { opacity: .38; cursor: not-allowed; }
+  .rg { display: flex; gap: 5px; flex-wrap: wrap; }
+  .ropt { background: var(--bg2); border: .5px solid var(--border); border-radius: var(--radius); padding: 5px 10px; font-size: 12px; color: var(--text2); cursor: pointer; transition: all .15s; }
+  .ropt.sel { background: var(--bg); border-color: var(--border2); color: var(--text); font-weight: 500; }
+  .nav { display: flex; gap: 8px; margin-top: 1.5rem; align-items: center; }
+  .bp { background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius); padding: 9px 18px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: var(--font); display: flex; align-items: center; gap: 6px; }
+  .bp:hover { opacity: .85; } .bp:disabled { opacity: .4; cursor: not-allowed; }
+  .bs { background: none; border: .5px solid var(--border2); border-radius: var(--radius); padding: 9px 15px; font-size: 13px; color: var(--text2); cursor: pointer; font-family: var(--font); }
+  .bs:hover { background: var(--bg2); }
+  .gen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 4rem 0; }
+  .spin { width: 26px; height: 26px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: sp .75s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .gen-lbl { font-size: 14px; color: var(--text2); }
+  .gen-step { font-size: 12px; color: var(--text3); }
+  .outwrap { display: flex; flex-direction: column; gap: 1.25rem; }
+  .tabs { display: flex; gap: 2px; border-bottom: .5px solid var(--border); margin-bottom: .75rem; }
+  .tab { background: none; border: none; padding: 7px 13px; font-size: 12px; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -.5px; font-family: var(--font); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+  .docbox { background: var(--bg2); border: .5px solid var(--border); border-radius: 10px; padding: 1.25rem; font-size: 12.5px; line-height: 1.75; color: var(--text); white-space: pre-wrap; min-height: 280px; max-height: 420px; overflow-y: auto; }
+  .exprow { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .exb { display: flex; align-items: center; gap: 6px; background: none; border: .5px solid var(--border2); border-radius: var(--radius); padding: 8px 13px; font-size: 12px; color: var(--text2); cursor: pointer; font-family: var(--font); white-space: nowrap; transition: all .2s; }
+  .exb:hover { background: var(--bg2); } .exb.loading { opacity: .55; cursor: wait; }
+  .exb.ok { color: #1a7f4b; border-color: #1a7f4b; } .exb.err { color: #c0392b; border-color: #c0392b; }
+  .rst { font-size: 12px; color: var(--text3); cursor: pointer; text-decoration: underline; margin-left: auto; }
+  .gtot { font-size: 12px; color: var(--text2); text-align: right; margin-top: 2px; }
+  .gcrd { background: var(--bg2); border: .5px solid var(--border); border-radius: var(--radius); padding: 9px 10px; display: flex; flex-direction: column; gap: 5px; }
+  .drive-link { font-size: 12px; margin-top: 4px; } .drive-link a { color: #185FA5; }
+  .err-msg { font-size: 13px; color: #c0392b; background: #fff0ee; border: .5px solid #f5c6c0; border-radius: var(--radius); padding: 10px 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <h1>Event planning agent</h1>
+    <p id="hdrSub">Comprehensive intake — brief, staffing plan, run-of-show, and checklist.</p>
+  </div>
+  <div class="prog" id="prog"></div>
+  <div id="content"></div>
+</div>
+
+<script>
+const STEPS = ["Basics","Rooms & A/V","Agenda","Volunteers","Attendees","Logistics"];
+const ROLES = ["Anchor","Float","Floater + Escalation","Informal Support","Check-in Lead","Photography","Signage","A/V Support","Greeter","Emcee"];
+const SEGTYPES = ["lecture","hands-on","qa","networking","break","workshop","demo"];
+const CHECKINS = [{id:"name-tags",l:"Name tags"},{id:"sign-in",l:"Sign-in sheet"},{id:"qr",l:"QR code"},{id:"app",l:"App/platform"}];
+
+let step = 0;
+let savedRoster = null;
+let generatedDocs = null;
+let activeTab = 0;
+
+const S = {
+  eventName:"", org:"", instr:"", date:"", tstart:"", tend:"", att:"",
+  pr:"", pc:"", ov:true, ovr:"", oc:"", rn:"",
+  proj:true, mic:"handheld", hybrid:false, hlink:"", avo:"",
+  segs:[
+    {n:"Welcome & intro",d:"10",t:"lecture"},
+    {n:"Learning portion",d:"45",t:"lecture"},
+    {n:"Hands-on work",d:"30",t:"hands-on"},
+    {n:"Q&A",d:"15",t:"qa"},
+    {n:"Networking",d:"20",t:"networking"}
+  ],
+  vols:[{n:"",r:"Anchor",rm:"Primary"},{n:"",r:"Float",rm:"Primary"}],
+  cn:"", cp:"",
+  ci:"name-tags", ntp:"", atr:"", atm:"3:40 PM",
+  byod:true, hout:false, houtd:"", oo:"", pht:"",
+  entry:"", floor:"", prk:"", lt:"60", sgn:true, sgno:"",
+  guests:[{n:"",t:"",nt:""}],
+  pem:"", psh:"", htag:"", sown:"", notes:""
+};
+
+function $(id){ return document.getElementById(id); }
+function $v(id){ return ($id=>($id?$id.value:""))($(`${id}`)); }
+function $ck(id){ return !!($(`${id}`)||{}).checked; }
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function fmt12(t){ if(!t)return""; const[h,m]=t.split(":"); const hr=+h; return`${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`; }
+function fmtD(d){ if(!d)return""; const dt=new Date(d+"T00:00:00"); return dt.toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"}); }
+
+// ── Form state persistence ────────────────────────────────────────────────
+function persistState(){
+  try{ localStorage.setItem("event_planner_state",JSON.stringify(S)); }catch(e){}
+}
+function restoreState(){
+  try{
+    const raw=localStorage.getItem("event_planner_state");
+    if(raw) Object.assign(S,JSON.parse(raw));
+  }catch(e){}
+}
+
+// ── Roster memory (localStorage) ──────────────────────────────────────────
+function fetchRoster(){
+  try{
+    const raw=localStorage.getItem("event_planner_roster");
+    if(raw){const r=JSON.parse(raw);if(r&&r.length)savedRoster=r;}
+  }catch(e){}
+}
+function saveRoster(){
+  const vols=S.vols.filter(v=>v.n.trim());
+  if(!vols.length)return;
+  localStorage.setItem("event_planner_roster",JSON.stringify(vols));
+  savedRoster=vols;
+  render();
+}
+function loadRoster(){
+  if(!savedRoster||!savedRoster.length)return;
+  S.vols=savedRoster.map(v=>({...v}));
+  render();
+}
+
+// ── Progress bar ──────────────────────────────────────────────────────────
+function renderProg(){
+  $("prog").innerHTML=STEPS.map((_,i)=>`<div class="pd ${i<step?"done":i===step?"active":""}"></div>`).join("");
+}
+
+// ── Build context string ──────────────────────────────────────────────────
+function buildCtx(){
+  const byR={Primary:[],Overflow:[],"Cross-room":[]};
+  S.vols.filter(v=>v.n).forEach(v=>(byR[v.rm]||byR.Primary).push(`${v.n} (${v.r})`));
+  const agenda=S.segs.map(s=>`  ${s.n} — ${s.d} min [${s.t}]`).join("\n");
+  const gst=S.guests.filter(g=>g.n).map(g=>`  ${g.n}, ${g.t}${g.nt?" — "+g.nt:""}`).join("\n");
+  const tot=S.segs.reduce((a,s)=>a+(parseInt(s.d)||0),0);
+  return `EVENT: ${S.eventName}\nORGANIZER: ${S.org}\nINSTRUCTOR/SPEAKER: ${S.instr}\nDATE: ${fmtD(S.date)}\nTIME: ${fmt12(S.tstart)} – ${fmt12(S.tend)}\nEXPECTED ATTENDEES: ${S.att}\n\nROOMS:\n  Primary: ${S.pr} (capacity ${S.pc})\n  Overflow: ${S.ov?S.ovr+" (capacity "+S.oc+")":"N/A"}\n  Note: ${S.rn||"N/A"}\n\nA/V:\n  Projector: ${S.proj?"Yes":"No"}\n  Mic: ${S.mic}\n  Hybrid: ${S.hybrid?"Yes — "+S.hlink:"No"}\n  A/V owner: ${S.avo||"TBD"}\n\nAGENDA (${tot} min total):\n${agenda}\n\nVOLUNTEERS:\n  Primary: ${byR.Primary.join(", ")||"None"}\n  Overflow: ${byR.Overflow.join(", ")||"None"}\n  Cross-room: ${byR["Cross-room"].join(", ")||"None"}\n  Contact: ${S.cn} ${S.cp}\n\nCHECK-IN:\n  Method: ${S.ci}\n  Name tags by: ${S.ntp||"TBD"}\n  Attendance: ${S.atr||"TBD"} at ${S.atm}\n\nMATERIALS:\n  BYOD: ${S.byod?"Yes":"No"}\n  Handouts: ${S.hout?S.houtd||"Yes":"None"}\n\nRECORDING/PHOTOS:\n  Opt-outs: ${S.oo||"None"}\n  Photography: ${S.pht||"TBD"}\n\nBUILDING ACCESS:\n  Entry: ${S.entry||"TBD"}\n  Floor/suite: ${S.floor||"TBD"}\n  Parking: ${S.prk||"TBD"}\n  Volunteer arrival: ${S.lt} min before start\n\nSIGNAGE: ${S.sgn?"Yes — "+S.sgno:"No"}\n\nSPECIAL GUESTS:\n${gst||"  None"}\n\nPOST-EVENT:\n  Follow-up email: ${S.pem||"TBD"}\n  Sharing: ${S.psh||"TBD"}\n  Hashtag: ${S.htag||"None"}\n  Social owner: ${S.sown||"TBD"}\n\nNOTES: ${S.notes||"None"}`;
+}
+
+// ── Step renderers ────────────────────────────────────────────────────────
+function p0(){ return `
+<div class="form-body"><div class="step-lbl">Step 1 of 6 — Event basics</div>
+<div class="g2">
+  <div class="field full"><label>Event name</label><input id="en" value="${esc(S.eventName)}" placeholder="e.g. Microsoft AI Workshop"/></div>
+  <div class="field"><label>Organizing body</label><input id="og" value="${esc(S.org)}" placeholder="e.g. Upskilling Labs"/></div>
+  <div class="field"><label>Instructor / speaker</label><input id="ins" value="${esc(S.instr)}" placeholder="e.g. Eric Brown"/></div>
+  <div class="field"><label>Event date</label><input type="date" id="ed" value="${S.date}"/></div>
+  <div class="field"><label>Expected attendees</label><input type="number" id="ea" value="${S.att}" placeholder="e.g. 50"/></div>
+  <div class="field"><label>Start time</label><input type="time" id="ts" value="${S.tstart}"/></div>
+  <div class="field"><label>End time</label><input type="time" id="te" value="${S.tend}"/></div>
+</div>
+<div class="nav"><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
+
+function p1(){ return `
+<div class="form-body"><div class="step-lbl">Step 2 of 6 — Rooms & A/V</div>
+<div class="sec-div">Rooms</div>
+<div class="g2">
+  <div class="field"><label>Primary room</label><input id="prm" value="${esc(S.pr)}" placeholder="e.g. Great Falls"/></div>
+  <div class="field"><label>Capacity</label><input type="number" id="prc" value="${S.pc}" placeholder="e.g. 32"/></div>
+  <div class="field full"><label class="cbr"><input type="checkbox" id="hov" ${S.ov?"checked":""}/> Overflow / breakout room</label></div>
+  ${S.ov?`<div class="field" id="orFld"><label>Overflow room name</label><input id="ovr" value="${esc(S.ovr)}" placeholder="e.g. York Training Lab"/></div>
+  <div class="field" id="ocFld"><label>Overflow capacity</label><input type="number" id="ovc" value="${S.oc}" placeholder="e.g. 24"/></div>`:""}
+  <div class="field full"><label>Room relationship note</label><input id="rnote" value="${esc(S.rn)}" placeholder="e.g. Directly across the hall on same floor"/></div>
+</div>
+<div class="sec-div" style="margin-top:6px">A/V & tech</div>
+<div class="g2">
+  <div class="field full"><label class="cbr"><input type="checkbox" id="hpj" ${S.proj?"checked":""}/> Projector / screen needed</label></div>
+  <div class="field"><label>Microphone type</label>
+    <select id="mict">${["handheld","lapel","headset","podium","none"].map(t=>`<option ${S.mic===t?"selected":""}>${t}</option>`).join("")}</select>
+  </div>
+  <div class="field"><label>A/V setup owner</label><input id="avow" value="${esc(S.avo)}" placeholder="e.g. Rudy"/></div>
+  <div class="field full"><label class="cbr"><input type="checkbox" id="hyb" ${S.hybrid?"checked":""}/> Hybrid / virtual component (Teams, Zoom…)</label></div>
+  ${S.hybrid?`<div class="field full"><label>Virtual meeting link</label><input id="hl" value="${esc(S.hlink)}" placeholder="https://teams.microsoft.com/…"/></div>`:""}
+</div>
+<div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
+
+function p2(){
+  const rows=S.segs.map((s,i)=>`
+    <div class="dr">
+      <input class="sn" data-i="${i}" value="${esc(s.n)}" placeholder="Segment name"/>
+      <input class="sd dur" data-i="${i}" type="number" value="${s.d}" placeholder="min"/>
+      <select class="st styp" data-i="${i}">${SEGTYPES.map(t=>`<option ${s.t===t?"selected":""}>${t}</option>`).join("")}</select>
+      <button class="rmv" onclick="rmSeg(${i})">×</button>
+    </div>`).join("");
+  const tot=S.segs.reduce((a,s)=>a+(parseInt(s.d)||0),0);
+  return `<div class="form-body"><div class="step-lbl">Step 3 of 6 — Agenda</div>
+<p style="font-size:12px;color:var(--text2)">Segments power the minute-by-minute run-of-show timeline in the brief.</p>
+<div class="dl" id="segl">${rows}</div>
+<button class="addb" onclick="addSeg()">+ Add segment</button>
+<div class="gtot">Total: <strong id="gtv">${tot} min</strong></div>
+<div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
+
+function p3(){
+  const rMsg=savedRoster&&savedRoster.length?`${savedRoster.length} volunteer${savedRoster.length>1?"s":""} saved`:"No saved roster";
+  const rows=S.vols.map((v,i)=>`
+    <div class="dr">
+      <input class="vn" data-i="${i}" value="${esc(v.n)}" placeholder="Full name"/>
+      <select class="vr" data-i="${i}">${ROLES.map(r=>`<option ${v.r===r?"selected":""}>${r}</option>`).join("")}</select>
+      <select class="vm" data-i="${i}" style="max-width:92px">${["Primary","Overflow","Cross-room"].map(r=>`<option ${v.rm===r?"selected":""}>${r}</option>`).join("")}</select>
+      <button class="rmv" onclick="rmVol(${i})">×</button>
+    </div>`).join("");
+  return `<div class="form-body"><div class="step-lbl">Step 4 of 6 — Volunteers</div>
+<div class="membar">
+  <span style="font-size:15px;color:var(--text3)">👥</span>
+  <span>Roster memory — ${rMsg}</span>
+  <button class="mb" onclick="loadRoster()" ${(!savedRoster||!savedRoster.length)?"disabled":""}>Load saved</button>
+  <button class="mb" onclick="saveRoster()">Save current</button>
+</div>
+<div class="dl" id="voll">${rows}</div>
+<button class="addb" onclick="addVol()">+ Add volunteer</button>
+<div class="g2" style="margin-top:6px">
+  <div class="field"><label>On-site contact name</label><input id="ctn" value="${esc(S.cn)}" placeholder="e.g. Afnan Adam"/></div>
+  <div class="field"><label>Contact phone</label><input id="ctp" value="${esc(S.cp)}" placeholder="e.g. (571) 332-7473"/></div>
+</div>
+<div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
+
+function p4(){
+  const ci=CHECKINS.map(o=>`<div class="ropt ${S.ci===o.id?"sel":""}" onclick="setCI('${o.id}')" data-id="${o.id}">${o.l}</div>`).join("");
+  return `<div class="form-body"><div class="step-lbl">Step 5 of 6 — Attendees & check-in</div>
+<div class="sec-div">Check-in</div>
+<div class="field"><label>Check-in method</label><div class="rg">${ci}</div></div>
+<div class="g2">
+  <div class="field"><label>Name tags prepared by</label><input id="ntp" value="${esc(S.ntp)}" placeholder="e.g. Microsoft / Jennifer"/></div>
+  <div class="field"><label>Attendance tracked by</label><input id="atr" value="${esc(S.atr)}" placeholder="e.g. Jennifer"/></div>
+  <div class="field"><label>Attendance snapshot time</label><input id="atm" value="${esc(S.atm)}" placeholder="e.g. 3:40 PM"/></div>
+</div>
+<div class="sec-div">Materials & tech</div>
+<div class="g2">
+  <div class="field full"><label class="cbr"><input type="checkbox" id="byod" ${S.byod?"checked":""}/> Attendees bring their own device (BYOD)</label></div>
+  <div class="field full"><label class="cbr"><input type="checkbox" id="hout" ${S.hout?"checked":""}/> Handouts / printed materials</label></div>
+  ${S.hout?`<div class="field full"><label>Handout details</label><input id="houtd" value="${esc(S.houtd)}" placeholder="e.g. 50 printed decks, USB drives"/></div>`:""}
+</div>
+<div class="sec-div">Recording & photography</div>
+<div class="g2">
+  <div class="field full"><label>Recording / photo opt-outs (names)</label><input id="oo" value="${esc(S.oo)}" placeholder="e.g. Mehdi Nadoushan, Paul Maudassen"/></div>
+  <div class="field full"><label>Photography team</label><input id="pht" value="${esc(S.pht)}" placeholder="e.g. Diana, Aaron"/></div>
+</div>
+<div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
+
+function p5(){
+  const gst=S.guests.map((g,i)=>`
+    <div class="gcrd">
+      <div class="dr"><input class="gn" data-i="${i}" value="${esc(g.n)}" placeholder="Guest name"/><input class="gt" data-i="${i}" value="${esc(g.t)}" placeholder="Title / org"/><button class="rmv" onclick="rmG(${i})">×</button></div>
+      <input class="gnt" data-i="${i}" value="${esc(g.nt)}" placeholder="Handling notes — e.g. 'Greet personally, offer intro to speaker'" style="width:100%"/>
+    </div>`).join("");
+  return `<div class="form-body"><div class="step-lbl">Step 6 of 6 — Logistics</div>
+<div class="sec-div">Building access</div>
+<div class="g2">
+  <div class="field full"><label>Entry instructions for early volunteers</label><input id="bent" value="${esc(S.entry)}" placeholder="e.g. Check in at front desk, request event badge"/></div>
+  <div class="field"><label>Floor / suite</label><input id="flr" value="${esc(S.floor)}" placeholder="e.g. Floor 3, Suite 302"/></div>
+  <div class="field"><label>Parking / transit notes</label><input id="prk" value="${esc(S.prk)}" placeholder="e.g. Visitor parking B2"/></div>
+</div>
+<div class="sec-div">Setup</div>
+<div class="g2">
+  <div class="field"><label>Volunteer arrival lead time (min)</label><input type="number" id="lt" value="${S.lt}" placeholder="60"/></div>
+  <div class="field"><label class="cbr" style="margin-top:18px"><input type="checkbox" id="hsgn" ${S.sgn?"checked":""}/> Signage needed</label></div>
+  ${S.sgn?`<div class="field full"><label>Signage placed by</label><input id="sgno" value="${esc(S.sgno)}" placeholder="e.g. Sandra"/></div>`:""}
+</div>
+<div class="sec-div">Special guests</div>
+<div class="dl" id="gstl">${gst}</div>
+<button class="addb" onclick="addG()">+ Add special guest</button>
+<div class="sec-div" style="margin-top:6px">Post-event & social</div>
+<div class="g2">
+  <div class="field"><label>Follow-up email owner</label><input id="pem" value="${esc(S.pem)}" placeholder="e.g. Afnan"/></div>
+  <div class="field"><label>What gets shared post-event</label><input id="psh" value="${esc(S.psh)}" placeholder="e.g. Slides, recording link"/></div>
+  <div class="field"><label>Event hashtag</label><input id="htag" value="${esc(S.htag)}" placeholder="e.g. #UpskillingLabs"/></div>
+  <div class="field"><label>Social / live updates owner</label><input id="so" value="${esc(S.sown)}" placeholder="e.g. Diana"/></div>
+</div>
+<div class="field" style="margin-top:4px"><label>Additional notes</label><textarea id="notes" placeholder="Anything else the team should know…">${esc(S.notes)}</textarea></div>
+<div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="generate()">✨ Generate brief</button></div></div>`; }
+
+// ── Save state from current step ──────────────────────────────────────────
+function saveStep(){
+  if(step===0){S.eventName=$v("en");S.org=$v("og");S.instr=$v("ins");S.date=$v("ed");S.att=$v("ea");S.tstart=$v("ts");S.tend=$v("te");}
+  else if(step===1){S.pr=$v("prm");S.pc=$v("prc");S.ovr=$v("ovr");S.oc=$v("ovc");S.rn=$v("rnote");S.avo=$v("avow");S.hlink=$v("hl");S.ov=$ck("hov");S.proj=$ck("hpj");S.hybrid=$ck("hyb");const m=$("mict");if(m)S.mic=m.value;}
+  else if(step===2){document.querySelectorAll(".sn").forEach(el=>S.segs[+el.dataset.i].n=el.value);document.querySelectorAll(".sd").forEach(el=>S.segs[+el.dataset.i].d=el.value);document.querySelectorAll(".st").forEach(el=>S.segs[+el.dataset.i].t=el.value);}
+  else if(step===3){document.querySelectorAll(".vn").forEach(el=>S.vols[+el.dataset.i].n=el.value);document.querySelectorAll(".vr").forEach(el=>S.vols[+el.dataset.i].r=el.value);document.querySelectorAll(".vm").forEach(el=>S.vols[+el.dataset.i].rm=el.value);S.cn=$v("ctn");S.cp=$v("ctp");}
+  else if(step===4){S.ntp=$v("ntp");S.atr=$v("atr");S.atm=$v("atm");S.houtd=$v("houtd");S.oo=$v("oo");S.pht=$v("pht");S.byod=$ck("byod");S.hout=$ck("hout");}
+  else if(step===5){S.entry=$v("bent");S.floor=$v("flr");S.prk=$v("prk");S.lt=$v("lt");S.sgno=$v("sgno");S.pem=$v("pem");S.psh=$v("psh");S.htag=$v("htag");S.sown=$v("so");S.notes=$v("notes");S.sgn=$ck("hsgn");document.querySelectorAll(".gn").forEach(el=>S.guests[+el.dataset.i].n=el.value);document.querySelectorAll(".gt").forEach(el=>S.guests[+el.dataset.i].t=el.value);document.querySelectorAll(".gnt").forEach(el=>S.guests[+el.dataset.i].nt=el.value);}
+}
+
+function nxt(){saveStep();persistState();step=Math.min(step+1,5);render();}
+function prv(){saveStep();persistState();step=Math.max(step-1,0);render();}
+function setCI(id){S.ci=id;document.querySelectorAll(".ropt").forEach(el=>el.classList.toggle("sel",el.dataset.id===id));}
+function addSeg(){saveStep();S.segs.push({n:"",d:"30",t:"lecture"});render();}
+function rmSeg(i){saveStep();S.segs.splice(i,1);render();}
+function addVol(){saveStep();S.vols.push({n:"",r:"Float",rm:"Primary"});render();}
+function rmVol(i){saveStep();S.vols.splice(i,1);if(!S.vols.length)S.vols.push({n:"",r:"Float",rm:"Primary"});render();}
+function addG(){saveStep();S.guests.push({n:"",t:"",nt:""});render();}
+function rmG(i){saveStep();S.guests.splice(i,1);if(!S.guests.length)S.guests.push({n:"",t:"",nt:""});render();}
+
+// ── Live total for agenda ─────────────────────────────────────────────────
+document.addEventListener("input",e=>{
+  if(e.target.classList.contains("sd")){
+    const tot=Array.from(document.querySelectorAll(".sd")).reduce((a,el)=>a+(parseInt(el.value)||0),0);
+    const el=$("gtv");if(el)el.textContent=tot+" min";
+  }
+});
+
+// ── Generate ──────────────────────────────────────────────────────────────
+async function generate(){
+  saveStep();persistState();
+  const msgs=["Drafting volunteer brief…","Building staffing plan…","Generating run-of-show…","Creating logistics checklist…"];
+  let si=0;
+  $("content").innerHTML=`<div class="gen"><div class="spin"></div><div class="gen-lbl">Building your planning docs</div><div class="gen-step" id="gs">Parsing event details…</div></div>`;
+  const iv=setInterval(()=>{const el=$("gs");if(el)el.textContent=msgs[si=(si+1)%msgs.length];},1400);
+  try{
+    const res=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({context:buildCtx(),leadTime:S.lt||60})});
+    if(!res.ok)throw new Error(`Server error ${res.status}`);
+    const data=await res.json();
+    if(data.error)throw new Error(data.error);
+    clearInterval(iv);
+    generatedDocs=[data.brief,data.staffing,data.checklist];
+    activeTab=0;
+    renderOutput();
+  }catch(e){
+    clearInterval(iv);
+    $("content").innerHTML=`<div class="err-msg">Generation failed: ${esc(e.message)}</div><div class="nav" style="margin-top:1rem"><button class="bs" onclick="render()">Try again</button></div>`;
+  }
+}
+
+// ── Output ────────────────────────────────────────────────────────────────
+function renderOutput(){
+  const tabs=["Volunteer brief","Staffing plan","Checklist"];
+  $("hdrSub").textContent=`${S.eventName||"Event"} · ${S.date||"—"} · 3 documents ready`;
+  $("prog").innerHTML="";
+  $("content").innerHTML=`
+  <div class="outwrap">
+    <div>
+      <div class="tabs">${tabs.map((t,i)=>`<button class="tab ${i===0?"active":""}" onclick="swTab(${i})">${t}</button>`).join("")}</div>
+      <div class="docbox" id="dbox">${esc(generatedDocs[0])}</div>
+    </div>
+    <div class="exprow">
+      <button class="exb" id="cpb" onclick="doCopy()">⎘ Copy</button>
+      <button class="exb" id="wb" onclick="doWord()">📄 Export to Word</button>
+      <button class="exb" id="db" onclick="doDrive()">🗂 Save to Drive</button>
+      <span class="rst" onclick="restart()">Start over</span>
+    </div>
+    <div id="dst" class="drive-link"></div>
+  </div>`;
+}
+
+function swTab(i){
+  activeTab=i;
+  document.querySelectorAll(".tab").forEach((t,idx)=>t.classList.toggle("active",idx===i));
+  $("dbox").textContent=generatedDocs[i];
+}
+
+function doCopy(){
+  navigator.clipboard.writeText(generatedDocs[activeTab]).then(()=>{
+    const b=$("cpb");b.textContent="✓ Copied!";b.classList.add("ok");
+    setTimeout(()=>{b.textContent="⎘ Copy";b.classList.remove("ok");},2000);
+  });
+}
+
+async function doWord(){
+  const b=$("wb");b.classList.add("loading");b.textContent="📄 Exporting…";
+  try{
+    const res=await fetch("/api/export-word",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docs:generatedDocs,eventName:S.eventName,org:S.org,date:fmtD(S.date)})});
+    if(!res.ok)throw new Error("Export failed");
+    const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=`${(S.eventName||"event").replace(/\s+/g,"_")}_brief.docx`;a.click();
+    URL.revokeObjectURL(url);
+    b.classList.remove("loading");b.textContent="📄 Downloaded";b.classList.add("ok");
+    setTimeout(()=>{b.textContent="📄 Export to Word";b.classList.remove("ok");},3000);
+  }catch(e){
+    b.classList.remove("loading");b.textContent="📄 Export failed";b.classList.add("err");
+    setTimeout(()=>{b.textContent="📄 Export to Word";b.classList.remove("err");},3000);
+  }
+}
+
+async function doDrive(){
+  const b=$("db");b.classList.add("loading");b.textContent="🗂 Saving to Drive…";
+  try{
+    const res=await fetch("/api/export-drive",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docs:generatedDocs,eventName:S.eventName})});
+    const data=await res.json();
+    b.classList.remove("loading");b.textContent="🗂 Saved to Drive";b.classList.add("ok");
+    const dst=$("dst");
+    if(data.url)dst.innerHTML=`<a href="${esc(data.url)}" target="_blank" rel="noopener">Open in Google Docs →</a>`;
+    else dst.textContent="Document saved to your Google Drive.";
+  }catch(e){
+    b.classList.remove("loading");b.textContent="🗂 Drive failed";b.classList.add("err");
+    setTimeout(()=>{b.textContent="🗂 Save to Drive";b.classList.remove("err");},3000);
+  }
+}
+
+function restart(){
+  step=0;generatedDocs=null;localStorage.removeItem("event_planner_state");
+  Object.assign(S,{eventName:"",org:"",instr:"",date:"",tstart:"",tend:"",att:"",pr:"",pc:"",ov:true,ovr:"",oc:"",rn:"",proj:true,mic:"handheld",hybrid:false,hlink:"",avo:"",segs:[{n:"Welcome & intro",d:"10",t:"lecture"},{n:"Learning portion",d:"45",t:"lecture"},{n:"Hands-on work",d:"30",t:"hands-on"},{n:"Q&A",d:"15",t:"qa"},{n:"Networking",d:"20",t:"networking"}],vols:[{n:"",r:"Anchor",rm:"Primary"},{n:"",r:"Float",rm:"Primary"}],cn:"",cp:"",ci:"name-tags",ntp:"",atr:"",atm:"3:40 PM",byod:true,hout:false,houtd:"",oo:"",pht:"",entry:"",floor:"",prk:"",lt:"60",sgn:true,sgno:"",guests:[{n:"",t:"",nt:""}],pem:"",psh:"",htag:"",sown:"",notes:""});
+  $("hdrSub").textContent="Comprehensive intake — brief, staffing plan, run-of-show, and checklist.";
+  render();
+}
+
+// ── Main render ──────────────────────────────────────────────────────────
+function render(){
+  renderProg();
+  const fns=[p0,p1,p2,p3,p4,p5];
+  $("content").innerHTML=fns[step]();
+}
+
+restoreState();fetchRoster();render();
+</script>
+</body>
+</html>
