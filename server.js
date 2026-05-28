@@ -4,6 +4,8 @@ const path = require("path");
 const Anthropic = require("@anthropic-ai/sdk");
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+  Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle,
+  PageBreak, UnderlineType,
 } = require("docx");
 
 const app = express();
@@ -61,163 +63,209 @@ app.post("/api/export-word", async (req, res) => {
   const { docs, eventName, org, date } = req.body;
   if (!docs?.length) return res.status(400).json({ error: "No documents to export" });
 
+  const ACCENT = "1F4E79";   // dark navy
+  const ACCENT2 = "2E74B5";  // mid blue
+  const LIGHT = "D6E4F0";    // light blue tint
+
   const titles = ["Volunteer HQ Brief", "Staffing Plan", "Logistics Checklist"];
-  const children = [];
 
-  children.push(new Paragraph({
-    children: [new TextRun({ text: eventName || "Event Brief", bold: true, size: 40 })],
-    alignment: AlignmentType.CENTER,
-  }));
-  if (org) children.push(new Paragraph({
-    children: [new TextRun({ text: org, size: 24, color: "555555" })],
-    alignment: AlignmentType.CENTER,
-  }));
-  if (date) children.push(new Paragraph({
-    children: [new TextRun({ text: date, size: 22, color: "888888" })],
-    alignment: AlignmentType.CENTER,
-  }));
-  children.push(new Paragraph({ text: "" }));
-  children.push(new Paragraph({ text: "" }));
+  // Strip markdown symbols from plain text
+  function stripInline(text) {
+    return text.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1");
+  }
 
-  // Parse inline bold (**text**) into TextRun array
-  function parseInline(text, baseSize = 20, baseColor = "333333") {
+  // Parse inline **bold** into TextRun array
+  function parseInline(text, baseSize = 20, baseColor = "2d2d2d") {
+    const cleaned = text.replace(/`([^`]+)`/g, "$1").replace(/\*(?!\*)([^*]+)\*(?!\*)/g, "$1");
     const runs = [];
-    const parts = text.split(/(\*\*[^*]+\*\*)/g);
-    parts.forEach(part => {
-      const boldMatch = part.match(/^\*\*([^*]+)\*\*$/);
-      if (boldMatch) {
-        runs.push(new TextRun({ text: boldMatch[1], bold: true, size: baseSize, color: baseColor }));
-      } else if (part) {
-        runs.push(new TextRun({ text: part, size: baseSize, color: baseColor }));
-      }
+    cleaned.split(/(\*\*[^*]+\*\*)/).forEach(part => {
+      const m = part.match(/^\*\*([^*]+)\*\*$/);
+      if (m) runs.push(new TextRun({ text: m[1], bold: true, size: baseSize, color: baseColor }));
+      else if (part) runs.push(new TextRun({ text: part, size: baseSize, color: baseColor }));
     });
     return runs.length ? runs : [new TextRun({ text: "", size: baseSize })];
   }
 
+  // Build a styled Word table from markdown table lines
+  function buildTable(lines) {
+    const rows = lines.filter(l => !/^\|[-| :]+\|$/.test(l.trim()));
+    return new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: rows.map((line, ri) => {
+        const cols = line.trim().split("|").filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim());
+        const isHeader = ri === 0;
+        return new TableRow({
+          tableHeader: isHeader,
+          children: cols.map(col => new TableCell({
+            shading: isHeader ? { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" }
+                              : (ri % 2 === 0 ? { fill: "F5F9FC", type: ShadingType.CLEAR, color: "auto" } : undefined),
+            margins: { top: 80, bottom: 80, left: 120, right: 120 },
+            children: [new Paragraph({
+              children: [new TextRun({
+                text: stripInline(col),
+                bold: isHeader,
+                color: isHeader ? "FFFFFF" : "2d2d2d",
+                size: 18,
+              })],
+            })],
+          })),
+        });
+      }),
+    });
+  }
+
+  const sections = [];
+
+  // Title page section
+  const titleChildren = [
+    new Paragraph({
+      children: [new TextRun({ text: eventName || "Event Brief", bold: true, size: 52, color: "FFFFFF" })],
+      alignment: AlignmentType.CENTER,
+      shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
+      spacing: { before: 480, after: 120 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: org || "", size: 26, color: "FFFFFF" })],
+      alignment: AlignmentType.CENTER,
+      shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
+      spacing: { after: 120 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: date || "", size: 22, color: "FFFFFF" })],
+      alignment: AlignmentType.CENTER,
+      shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
+      spacing: { after: 480 },
+    }),
+  ];
+  sections.push({ children: titleChildren });
+
+  // One section per document
   docs.forEach((doc, di) => {
+    const children = [];
+
+    // Section title banner
     children.push(new Paragraph({
-      children: [new TextRun({ text: titles[di], bold: true, size: 28, color: "111111" })],
-      heading: HeadingLevel.HEADING_1,
-      spacing: { before: 400, after: 200 },
+      children: [new TextRun({ text: titles[di].toUpperCase(), bold: true, size: 32, color: "FFFFFF" })],
+      shading: { fill: ACCENT2, type: ShadingType.CLEAR, color: "auto" },
+      spacing: { before: 0, after: 240 },
     }));
 
+    const lines = doc.split("\n");
+    let i = 0;
     let inCodeBlock = false;
-    doc.split("\n").forEach(line => {
+
+    while (i < lines.length) {
+      const line = lines[i];
       const t = line.trim();
 
-      // Toggle code block — render contents as monospace indented text
-      if (/^```/.test(t)) { inCodeBlock = !inCodeBlock; return; }
+      // Code block toggle
+      if (/^```/.test(t)) { inCodeBlock = !inCodeBlock; i++; continue; }
       if (inCodeBlock) {
         children.push(new Paragraph({
           children: [new TextRun({ text: line, size: 18, color: "444444", font: "Courier New" })],
           spacing: { before: 20, after: 20 },
           indent: { left: 360 },
         }));
-        return;
+        i++; continue;
       }
 
-      // Skip markdown table separator rows
-      if (/^\|[-| :]+\|$/.test(t)) return;
+      // Collect consecutive table lines and render as a real Word table
+      if (/^\|/.test(t)) {
+        const tableLines = [];
+        while (i < lines.length && /^\|/.test(lines[i].trim())) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        if (tableLines.filter(l => !/^\|[-| :]+\|$/.test(l.trim())).length > 1) {
+          children.push(buildTable(tableLines));
+          children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 120 } }));
+        }
+        continue;
+      }
 
-      // H1: # heading
+      // Skip separator lines
+      if (/^\|[-| :]+\|$/.test(t) || /^---+$/.test(t)) { i++; continue; }
+
+      // H1
       if (/^# /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 28, color: "111111" })],
+          children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 28, color: ACCENT })],
           heading: HeadingLevel.HEADING_1,
-          spacing: { before: 320, after: 160 },
+          spacing: { before: 320, after: 120 },
+          border: { bottom: { color: LIGHT, size: 6, space: 1, style: BorderStyle.SINGLE } },
         }));
-        return;
+        i++; continue;
       }
 
-      // H2: ## heading
+      // H2
       if (/^## /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 24, color: "111111" })],
+          children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 24, color: ACCENT })],
           heading: HeadingLevel.HEADING_2,
-          spacing: { before: 240, after: 120 },
+          spacing: { before: 240, after: 100 },
         }));
-        return;
+        i++; continue;
       }
 
-      // H3: ### heading
+      // H3
       if (/^### /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 22, color: "222222" })],
+          children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 22, color: ACCENT2 })],
           heading: HeadingLevel.HEADING_3,
           spacing: { before: 180, after: 80 },
         }));
-        return;
+        i++; continue;
       }
 
-      // Horizontal rule ---
-      if (/^---+$/.test(t)) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: "─".repeat(60), size: 16, color: "cccccc" })],
-          spacing: { before: 80, after: 80 },
-        }));
-        return;
-      }
-
-      // Table row | col | col |
-      if (/^\|/.test(t)) {
-        const cols = t.split("|").filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim());
-        const rowText = cols.join("   |   ");
-        children.push(new Paragraph({
-          children: parseInline(rowText, 18, "222222"),
-          spacing: { before: 20, after: 20 },
-          indent: { left: 120 },
-        }));
-        return;
-      }
-
-      // Blockquote > text
+      // Blockquote
       if (/^> /.test(t)) {
-        const inner = t.replace(/^> /, "").replace(/\*\*([^*]+)\*\*/g, "$1");
         children.push(new Paragraph({
-          children: [new TextRun({ text: inner, italics: true, size: 18, color: "555555" })],
+          children: [new TextRun({ text: stripInline(t.replace(/^> /, "")), italics: true, size: 18, color: "555555" })],
           spacing: { before: 60, after: 60 },
           indent: { left: 360 },
+          shading: { fill: "F5F9FC", type: ShadingType.CLEAR, color: "auto" },
         }));
-        return;
+        i++; continue;
       }
 
-      // Bullet: - item or * item
+      // Bullet
       if (/^[-*] /.test(t)) {
         children.push(new Paragraph({
-          children: parseInline(t.replace(/^[-*] /, ""), 20, "333333"),
+          children: parseInline(t.replace(/^[-*] /, ""), 20, "2d2d2d"),
           bullet: { level: 0 },
           spacing: { before: 40, after: 40 },
         }));
-        return;
+        i++; continue;
       }
 
-      // Emoji section heading (📌 🧑 etc.)
+      // Emoji section heading
       if (/^[📌🧑📺🗓🏢📸🏷🪧🔧🤝📱📣]/.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t, bold: true, size: 22, color: "111111" })],
-          spacing: { before: 200, after: 100 },
+          children: [new TextRun({ text: t, bold: true, size: 24, color: ACCENT })],
+          spacing: { before: 240, after: 120 },
+          border: { bottom: { color: LIGHT, size: 4, space: 1, style: BorderStyle.SINGLE } },
         }));
-        return;
+        i++; continue;
       }
 
       // Empty line
       if (!t) {
-        children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 60 } }));
-        return;
+        children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 80 } }));
+        i++; continue;
       }
 
-      // Default paragraph — strip inline code backticks, then parse bold
-      const cleaned = t.replace(/`([^`]+)`/g, "$1").replace(/\*([^*]+)\*/g, "$1");
+      // Default paragraph
       children.push(new Paragraph({
-        children: parseInline(cleaned, 20, "333333"),
-        spacing: { after: 60 },
+        children: parseInline(t, 20, "2d2d2d"),
+        spacing: { after: 80 },
       }));
-    });
+      i++;
+    }
 
-    children.push(new Paragraph({ text: "" }));
+    sections.push({ children });
   });
 
-  const document = new Document({ sections: [{ children }] });
+  const document = new Document({ sections });
   const buffer = await Packer.toBuffer(document);
   const filename = `${(eventName || "event").replace(/\s+/g, "_")}_brief.docx`;
 
