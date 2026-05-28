@@ -101,8 +101,20 @@ app.post("/api/export-word", async (req, res) => {
       spacing: { before: 400, after: 200 },
     }));
 
+    let inCodeBlock = false;
     doc.split("\n").forEach(line => {
       const t = line.trim();
+
+      // Toggle code block — render contents as monospace indented text
+      if (/^```/.test(t)) { inCodeBlock = !inCodeBlock; return; }
+      if (inCodeBlock) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: line, size: 18, color: "444444", font: "Courier New" })],
+          spacing: { before: 20, after: 20 },
+          indent: { left: 360 },
+        }));
+        return;
+      }
 
       // Skip markdown table separator rows
       if (/^\|[-| :]+\|$/.test(t)) return;
@@ -194,9 +206,10 @@ app.post("/api/export-word", async (req, res) => {
         return;
       }
 
-      // Default paragraph with inline bold parsing
+      // Default paragraph — strip inline code backticks, then parse bold
+      const cleaned = t.replace(/`([^`]+)`/g, "$1").replace(/\*([^*]+)\*/g, "$1");
       children.push(new Paragraph({
-        children: parseInline(t, 20, "333333"),
+        children: parseInline(cleaned, 20, "333333"),
         spacing: { after: 60 },
       }));
     });
