@@ -79,7 +79,6 @@
   .rst { font-size: 12px; color: var(--text3); cursor: pointer; text-decoration: underline; margin-left: auto; }
   .gtot { font-size: 12px; color: var(--text2); text-align: right; margin-top: 2px; }
   .gcrd { background: var(--bg2); border: .5px solid var(--border); border-radius: var(--radius); padding: 9px 10px; display: flex; flex-direction: column; gap: 5px; }
-  .drive-link { font-size: 12px; margin-top: 4px; } .drive-link a { color: #185FA5; }
   .err-msg { font-size: 13px; color: #c0392b; background: #fff0ee; border: .5px solid #f5c6c0; border-radius: var(--radius); padding: 10px 12px; }
 </style>
 </head>
@@ -373,10 +372,8 @@ function renderOutput(){
     <div class="exprow">
       <button class="exb" id="cpb" onclick="doCopy()">⎘ Copy</button>
       <button class="exb" id="wb" onclick="doWord()">📄 Export to Word</button>
-      <button class="exb" id="db" onclick="doDrive()">🗂 Save to Drive</button>
       <span class="rst" onclick="restart()">Start over</span>
     </div>
-    <div id="dst" class="drive-link"></div>
   </div>`;
 }
 
@@ -411,20 +408,6 @@ async function doWord(){
   }
 }
 
-async function doDrive(){
-  const b=$("db");b.classList.add("loading");b.textContent="🗂 Saving to Drive…";
-  try{
-    const res=await fetch("/api/export-drive",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docs:generatedDocs,eventName:S.eventName})});
-    const data=await res.json();
-    b.classList.remove("loading");b.textContent="🗂 Saved to Drive";b.classList.add("ok");
-    const dst=$("dst");
-    if(data.url)dst.innerHTML=`<a href="${esc(data.url)}" target="_blank" rel="noopener">Open in Google Docs →</a>`;
-    else dst.textContent="Document saved to your Google Drive.";
-  }catch(e){
-    b.classList.remove("loading");b.textContent="🗂 Drive failed";b.classList.add("err");
-    setTimeout(()=>{b.textContent="🗂 Save to Drive";b.classList.remove("err");},3000);
-  }
-}
 
 function restart(){
   step=0;generatedDocs=null;localStorage.removeItem("event_planner_state");
