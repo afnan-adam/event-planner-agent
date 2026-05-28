@@ -79,25 +79,128 @@ app.post("/api/export-word", async (req, res) => {
   children.push(new Paragraph({ text: "" }));
   children.push(new Paragraph({ text: "" }));
 
+  // Parse inline bold (**text**) into TextRun array
+  function parseInline(text, baseSize = 20, baseColor = "333333") {
+    const runs = [];
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    parts.forEach(part => {
+      const boldMatch = part.match(/^\*\*([^*]+)\*\*$/);
+      if (boldMatch) {
+        runs.push(new TextRun({ text: boldMatch[1], bold: true, size: baseSize, color: baseColor }));
+      } else if (part) {
+        runs.push(new TextRun({ text: part, size: baseSize, color: baseColor }));
+      }
+    });
+    return runs.length ? runs : [new TextRun({ text: "", size: baseSize })];
+  }
+
   docs.forEach((doc, di) => {
     children.push(new Paragraph({
-      children: [new TextRun({ text: titles[di], bold: true, size: 28 })],
+      children: [new TextRun({ text: titles[di], bold: true, size: 28, color: "111111" })],
       heading: HeadingLevel.HEADING_1,
       spacing: { before: 400, after: 200 },
     }));
 
     doc.split("\n").forEach(line => {
-      const isHeading = /^[📌🧑📺🗓🏢📸🏷🪧🔧🤝📱📣]/.test(line.trim());
+      const t = line.trim();
+
+      // Skip markdown table separator rows
+      if (/^\|[-| :]+\|$/.test(t)) return;
+
+      // H1: # heading
+      if (/^# /.test(t)) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 28, color: "111111" })],
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 320, after: 160 },
+        }));
+        return;
+      }
+
+      // H2: ## heading
+      if (/^## /.test(t)) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 24, color: "111111" })],
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 240, after: 120 },
+        }));
+        return;
+      }
+
+      // H3: ### heading
+      if (/^### /.test(t)) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 22, color: "222222" })],
+          heading: HeadingLevel.HEADING_3,
+          spacing: { before: 180, after: 80 },
+        }));
+        return;
+      }
+
+      // Horizontal rule ---
+      if (/^---+$/.test(t)) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: "─".repeat(60), size: 16, color: "cccccc" })],
+          spacing: { before: 80, after: 80 },
+        }));
+        return;
+      }
+
+      // Table row | col | col |
+      if (/^\|/.test(t)) {
+        const cols = t.split("|").filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim());
+        const rowText = cols.join("   |   ");
+        children.push(new Paragraph({
+          children: parseInline(rowText, 18, "222222"),
+          spacing: { before: 20, after: 20 },
+          indent: { left: 120 },
+        }));
+        return;
+      }
+
+      // Blockquote > text
+      if (/^> /.test(t)) {
+        const inner = t.replace(/^> /, "").replace(/\*\*([^*]+)\*\*/g, "$1");
+        children.push(new Paragraph({
+          children: [new TextRun({ text: inner, italics: true, size: 18, color: "555555" })],
+          spacing: { before: 60, after: 60 },
+          indent: { left: 360 },
+        }));
+        return;
+      }
+
+      // Bullet: - item or * item
+      if (/^[-*] /.test(t)) {
+        children.push(new Paragraph({
+          children: parseInline(t.replace(/^[-*] /, ""), 20, "333333"),
+          bullet: { level: 0 },
+          spacing: { before: 40, after: 40 },
+        }));
+        return;
+      }
+
+      // Emoji section heading (📌 🧑 etc.)
+      if (/^[📌🧑📺🗓🏢📸🏷🪧🔧🤝📱📣]/.test(t)) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: t, bold: true, size: 22, color: "111111" })],
+          spacing: { before: 200, after: 100 },
+        }));
+        return;
+      }
+
+      // Empty line
+      if (!t) {
+        children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 60 } }));
+        return;
+      }
+
+      // Default paragraph with inline bold parsing
       children.push(new Paragraph({
-        children: [new TextRun({
-          text: line,
-          bold: isHeading,
-          size: isHeading ? 24 : 20,
-          color: isHeading ? "111111" : "333333",
-        })],
-        spacing: { after: isHeading ? 140 : 40 },
+        children: parseInline(t, 20, "333333"),
+        spacing: { after: 60 },
       }));
     });
+
     children.push(new Paragraph({ text: "" }));
   });
 
