@@ -4,7 +4,10 @@ const path = require("path");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const Anthropic = require("@anthropic-ai/sdk");
-const { Document, Packer, Paragraph, TextRun, ShadingType, BorderStyle } = require("docx");
+const {
+  Document, Packer, Paragraph, TextRun, ShadingType, BorderStyle,
+  Table, TableRow, TableCell, WidthType,
+} = require("docx");
 const JSZip = require("jszip");
 
 // Fail fast if the API key is missing — avoids cryptic errors on first request.
@@ -229,6 +232,35 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
     );
   }
 
+  // Convert consecutive markdown table lines into a styled Word table
+  function buildTable(lines) {
+    const dataRows = lines.filter(l => !/^\|[-| :]+\|$/.test(l.trim()));
+    return new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: dataRows.map((line, ri) => {
+        const cols = line.trim().split("|").filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim());
+        const isHeader = ri === 0;
+        return new TableRow({
+          tableHeader: isHeader,
+          children: cols.map(col => new TableCell({
+            shading: isHeader
+              ? { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" }
+              : (ri % 2 === 0 ? { fill: "F5F9FC", type: ShadingType.CLEAR, color: "auto" } : undefined),
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
+            children: [new Paragraph({
+              children: [new TextRun({
+                text: col.replace(/\*\*([^*]+)\*\*/g, "$1"),
+                bold: isHeader,
+                color: isHeader ? "FFFFFF" : "2d2d2d",
+                size: 17,
+              })],
+            })],
+          })),
+        });
+      }),
+    });
+  }
+
   // Build one .docx buffer from a document string
   function buildDocx(text, title, names) {
     const children = [];
@@ -250,9 +282,23 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
       spacing: { before: 0, after: 120 },
     }));
 
-    for (const line of text.split("\n")) {
-      const t = line.trim();
-      if (!t) continue;
+    const lines = text.split("\n");
+    let i = 0;
+    while (i < lines.length) {
+      const t = lines[i].trim();
+
+      // Collect consecutive table lines and render as a real Word table
+      if (/^\|/.test(t)) {
+        const tableLines = [];
+        while (i < lines.length && /^\|/.test(lines[i].trim())) { tableLines.push(lines[i]); i++; }
+        if (tableLines.filter(l => !/^\|[-| :]+\|$/.test(l.trim())).length > 1) {
+          children.push(buildTable(tableLines));
+          children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 80 } }));
+        }
+        continue;
+      }
+
+      if (!t) { i++; continue; }
 
       // ALL-CAPS section headers (EVENT SUMMARY, RUN OF SHOW, ROSTER, etc.)
       if (/^[A-Z][A-Z\s]{3,}$/.test(t)) {
@@ -261,7 +307,7 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
           spacing: { before: 140, after: 50 },
           border: { bottom: { color: LIGHT, size: 4, space: 1, style: BorderStyle.SINGLE } },
         }));
-        continue;
+        i++; continue;
       }
 
       // Markdown headings
@@ -271,14 +317,14 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
           spacing: { before: 120, after: 40 },
           border: { bottom: { color: LIGHT, size: 3, space: 1, style: BorderStyle.SINGLE } },
         }));
-        continue;
+        i++; continue;
       }
       if (/^### /.test(t)) {
         children.push(new Paragraph({
           children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 18, color: NAME })],
           spacing: { before: 80, after: 30 },
         }));
-        continue;
+        i++; continue;
       }
 
       // Time-block lines (e.g. "3:00 PM — Welcome")
@@ -287,7 +333,7 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
           children: [new TextRun({ text: t, bold: true, size: 18, color: ACCENT })],
           spacing: { before: 100, after: 20 },
         }));
-        continue;
+        i++; continue;
       }
 
       // Checkbox items [ ]
@@ -297,7 +343,7 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
           spacing: { before: 14, after: 14 },
           indent: { left: 240 },
         }));
-        continue;
+        i++; continue;
       }
 
       // Bullet lines
@@ -307,14 +353,15 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
           bullet: { level: 0 },
           spacing: { before: 14, after: 14 },
         }));
-        continue;
+        i++; continue;
       }
 
-      // Default
+      // Default paragraph
       children.push(new Paragraph({
         children: parseWithNames(t, names, 18),
         spacing: { after: 36 },
       }));
+      i++;
     }
 
     return new Document({
