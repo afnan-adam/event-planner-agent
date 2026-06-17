@@ -68,7 +68,7 @@ function validateGenerate(body) {
   const { context, leadTime } = body;
   if (!isNonEmptyString(context)) return "context must be a non-empty string.";
   if (context.length > MAX_CONTEXT) return `context must be under ${MAX_CONTEXT} characters.`;
-  if (leadTime !== undefined && (typeof leadTime !== "number" || !Number.isFinite(leadTime)))
+  if (leadTime !== undefined && !Number.isFinite(Number(leadTime)))
     return "leadTime must be a number.";
   return null;
 }
@@ -97,7 +97,8 @@ app.post("/api/generate", apiLimiter, async (req, res) => {
   const validationError = validateGenerate(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
 
-  const { context, leadTime } = req.body;
+  const { context } = req.body;
+  const leadTime = Number(req.body.leadTime) || 60;
 
   try {
     const [brief, staffing, checklist] = await Promise.all([
@@ -124,7 +125,7 @@ app.post("/api/generate", apiLimiter, async (req, res) => {
         max_tokens: 1500,
         messages: [{
           role: "user",
-          content: `You are an expert event operations coordinator. Using the event details below, produce a Day-of Logistics Checklist organized by time block:\n\n- Pre-arrival (T-${leadTime || 60}min)\n- Setup (T-30min)\n- Final sweep (T-10min)\n- Doors open\n- One section per agenda segment (by name)\n- Wrap-up\n- Post-event close-out\n\nEach item as [ ]. Include owner names where known. Output ONLY the checklist.\n\nEVENT DATA:\n${context}`,
+          content: `You are an expert event operations coordinator. Using the event details below, produce a Day-of Logistics Checklist organized by time block:\n\n- Pre-arrival (T-${leadTime}min)\n- Setup (T-30min)\n- Final sweep (T-10min)\n- Doors open\n- One section per agenda segment (by name)\n- Wrap-up\n- Post-event close-out\n\nEach item as [ ]. Include owner names where known. Output ONLY the checklist.\n\nEVENT DATA:\n${context}`,
         }],
       }).then(r => r.content.map(b => b.text || "").join("")),
     ]);
