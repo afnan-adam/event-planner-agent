@@ -1,25 +1,103 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const Anthropic = require("@anthropic-ai/sdk");
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle,
-  PageBreak, UnderlineType,
 } = require("docx");
+
+// Fail fast if the API key is missing — avoids cryptic errors on first request.
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error("ERROR: ANTHROPIC_API_KEY is not set. Add it to your .env file and restart.");
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ── Security headers ─────────────────────────────────────────────────────────
+// helmet sets X-Content-Type-Options, X-Frame-Options, HSTS, etc. in one call.
+// contentSecurityPolicy is relaxed slightly to allow inline scripts used by the
+// single-page frontend (no external scripts are loaded, so the risk is low).
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// ── CORS — same-origin only ───────────────────────────────────────────────────
+// The frontend is served by this same Express process, so there is no legitimate
+// cross-origin caller. Reject any preflight or credentialed cross-origin request.
+app.use((req, res, next) => {
+  const origin = req.get("Origin");
+  if (origin) {
+    const host = req.get("Host");
+    const requestOrigin = new URL(origin);
+    if (requestOrigin.host !== host) {
+      return res.status(403).json({ error: "Cross-origin requests are not allowed." });
+    }
+  }
+  next();
+});
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+// 20 requests per 15 minutes per IP is generous for a demo but prevents runaway
+// spend if the API key is exposed or the app is crawled.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests — please wait a few minutes and try again." },
+});
 
 app.use(express.json({ limit: "5mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ── Generate documents ───────────────────────────────────────────────────────
-app.post("/api/generate", async (req, res) => {
+// ── Input validation helpers ──────────────────────────────────────────────────
+const MAX_CONTEXT = 20_000;
+const MAX_STR = 200;
+const MAX_DOC_LEN = 30_000;
+const MAX_DOCS = 3;
+
+function isNonEmptyString(v) { return typeof v === "string" && v.trim().length > 0; }
+function isBoundedString(v, max) { return typeof v === "string" && v.length <= max; }
+
+function validateGenerate(body) {
+  const { context, leadTime } = body;
+  if (!isNonEmptyString(context)) return "context must be a non-empty string.";
+  if (context.length > MAX_CONTEXT) return `context must be under ${MAX_CONTEXT} characters.`;
+  if (leadTime !== undefined && (typeof leadTime !== "number" || !Number.isFinite(leadTime)))
+    return "leadTime must be a number.";
+  return null;
+}
+
+function validateExportWord(body) {
+  const { docs, eventName, org, date } = body;
+  if (!Array.isArray(docs) || docs.length === 0) return "docs must be a non-empty array.";
+  if (docs.length > MAX_DOCS) return `docs may contain at most ${MAX_DOCS} items.`;
+  for (const d of docs) {
+    if (typeof d !== "string") return "each doc must be a string.";
+    if (d.length > MAX_DOC_LEN) return `each doc must be under ${MAX_DOC_LEN} characters.`;
+  }
+  if (eventName !== undefined && !isBoundedString(eventName, MAX_STR))
+    return `eventName must be a string under ${MAX_STR} characters.`;
+  if (org !== undefined && !isBoundedString(org, MAX_STR))
+    return `org must be a string under ${MAX_STR} characters.`;
+  if (date !== undefined && !isBoundedString(date, MAX_STR))
+    return `date must be a string under ${MAX_STR} characters.`;
+  return null;
+}
+
+// ── Generate documents ────────────────────────────────────────────────────────
+// Calls Claude in parallel for three documents: volunteer brief, staffing plan,
+// and day-of checklist. All three are returned in a single JSON response.
+app.post("/api/generate", apiLimiter, async (req, res) => {
+  const validationError = validateGenerate(req.body);
+  if (validationError) return res.status(400).json({ error: validationError });
+
   const { context, leadTime } = req.body;
-  if (!context) return res.status(400).json({ error: "Missing event context" });
 
   try {
     const [brief, staffing, checklist] = await Promise.all([
@@ -53,15 +131,21 @@ app.post("/api/generate", async (req, res) => {
 
     res.json({ brief, staffing, checklist });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
+    // Log the full error server-side; return only a generic message to the client
+    // so internal details (model names, stack traces) are never exposed.
+    console.error("[/api/generate]", e);
+    res.status(500).json({ error: "Document generation failed. Please try again." });
   }
 });
 
-// ── Export to Word ───────────────────────────────────────────────────────────
-app.post("/api/export-word", async (req, res) => {
+// ── Export to Word ────────────────────────────────────────────────────────────
+// Converts the three Claude-generated markdown strings into a styled .docx file
+// using the `docx` library, then streams it directly to the client.
+app.post("/api/export-word", apiLimiter, async (req, res) => {
+  const validationError = validateExportWord(req.body);
+  if (validationError) return res.status(400).json({ error: validationError });
+
   const { docs, eventName, org, date } = req.body;
-  if (!docs?.length) return res.status(400).json({ error: "No documents to export" });
 
   const ACCENT = "1F4E79";   // dark navy
   const ACCENT2 = "2E74B5";  // mid blue
@@ -69,12 +153,10 @@ app.post("/api/export-word", async (req, res) => {
 
   const titles = ["Volunteer HQ Brief", "Staffing Plan", "Logistics Checklist"];
 
-  // Strip markdown symbols from plain text
   function stripInline(text) {
     return text.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1");
   }
 
-  // Parse inline **bold** into TextRun array
   function parseInline(text, baseSize = 20, baseColor = "2d2d2d") {
     const cleaned = text.replace(/`([^`]+)`/g, "$1").replace(/\*(?!\*)([^*]+)\*(?!\*)/g, "$1");
     const runs = [];
@@ -86,7 +168,6 @@ app.post("/api/export-word", async (req, res) => {
     return runs.length ? runs : [new TextRun({ text: "", size: baseSize })];
   }
 
-  // Build a styled Word table from markdown table lines
   function buildTable(lines) {
     const rows = lines.filter(l => !/^\|[-| :]+\|$/.test(l.trim()));
     return new Table({
@@ -116,7 +197,6 @@ app.post("/api/export-word", async (req, res) => {
 
   const sections = [];
 
-  // Title page section
   const titleChildren = [
     new Paragraph({
       children: [new TextRun({ text: eventName || "Event Brief", bold: true, size: 52, color: "FFFFFF" })],
@@ -139,11 +219,9 @@ app.post("/api/export-word", async (req, res) => {
   ];
   sections.push({ children: titleChildren });
 
-  // One section per document
   docs.forEach((doc, di) => {
     const children = [];
 
-    // Section title banner
     children.push(new Paragraph({
       children: [new TextRun({ text: titles[di].toUpperCase(), bold: true, size: 32, color: "FFFFFF" })],
       shading: { fill: ACCENT2, type: ShadingType.CLEAR, color: "auto" },
@@ -158,7 +236,6 @@ app.post("/api/export-word", async (req, res) => {
       const line = lines[i];
       const t = line.trim();
 
-      // Code block toggle
       if (/^```/.test(t)) { inCodeBlock = !inCodeBlock; i++; continue; }
       if (inCodeBlock) {
         children.push(new Paragraph({
@@ -169,13 +246,9 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // Collect consecutive table lines and render as a real Word table
       if (/^\|/.test(t)) {
         const tableLines = [];
-        while (i < lines.length && /^\|/.test(lines[i].trim())) {
-          tableLines.push(lines[i]);
-          i++;
-        }
+        while (i < lines.length && /^\|/.test(lines[i].trim())) { tableLines.push(lines[i]); i++; }
         if (tableLines.filter(l => !/^\|[-| :]+\|$/.test(l.trim())).length > 1) {
           children.push(buildTable(tableLines));
           children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 120 } }));
@@ -183,10 +256,8 @@ app.post("/api/export-word", async (req, res) => {
         continue;
       }
 
-      // Skip separator lines
       if (/^\|[-| :]+\|$/.test(t) || /^---+$/.test(t)) { i++; continue; }
 
-      // H1
       if (/^# /.test(t)) {
         children.push(new Paragraph({
           children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 28, color: ACCENT })],
@@ -197,7 +268,6 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // H2
       if (/^## /.test(t)) {
         children.push(new Paragraph({
           children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 24, color: ACCENT })],
@@ -207,7 +277,6 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // H3
       if (/^### /.test(t)) {
         children.push(new Paragraph({
           children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 22, color: ACCENT2 })],
@@ -217,7 +286,6 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // Blockquote
       if (/^> /.test(t)) {
         children.push(new Paragraph({
           children: [new TextRun({ text: stripInline(t.replace(/^> /, "")), italics: true, size: 18, color: "555555" })],
@@ -228,7 +296,6 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // Bullet
       if (/^[-*] /.test(t)) {
         children.push(new Paragraph({
           children: parseInline(t.replace(/^[-*] /, ""), 20, "2d2d2d"),
@@ -238,7 +305,6 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // Emoji section heading
       if (/^[📌🧑📺🗓🏢📸🏷🪧🔧🤝📱📣]/.test(t)) {
         children.push(new Paragraph({
           children: [new TextRun({ text: t, bold: true, size: 24, color: ACCENT })],
@@ -248,13 +314,11 @@ app.post("/api/export-word", async (req, res) => {
         i++; continue;
       }
 
-      // Empty line
       if (!t) {
         children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 80 } }));
         i++; continue;
       }
 
-      // Default paragraph
       children.push(new Paragraph({
         children: parseInline(t, 20, "2d2d2d"),
         spacing: { after: 80 },
@@ -265,15 +329,19 @@ app.post("/api/export-word", async (req, res) => {
     sections.push({ children });
   });
 
-  const document = new Document({ sections });
-  const buffer = await Packer.toBuffer(document);
-  const filename = `${(eventName || "event").replace(/\s+/g, "_")}_brief.docx`;
+  try {
+    const document = new Document({ sections });
+    const buffer = await Packer.toBuffer(document);
+    const filename = `${(eventName || "event").replace(/\s+/g, "_")}_brief.docx`;
 
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.send(buffer);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error("[/api/export-word]", e);
+    res.status(500).json({ error: "Word export failed. Please try again." });
+  }
 });
-
 
 app.listen(PORT, () => {
   console.log(`\n✅ Event Planning Agent running at http://localhost:${PORT}\n`);
