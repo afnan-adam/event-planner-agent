@@ -5,7 +5,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const Anthropic = require("@anthropic-ai/sdk");
 const {
-  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+  Document, Packer, Paragraph, TextRun, HeadingLevel,
   Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle,
 } = require("docx");
 
@@ -196,37 +196,26 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
     });
   }
 
-  const sections = [];
+  // All content goes in one section so there's no wasted title page.
+  // Narrow margins (720 twips = 0.5 in) recover ~1.5 inches of vertical space.
+  const children = [];
 
-  const titleChildren = [
-    new Paragraph({
-      children: [new TextRun({ text: eventName || "Event Brief", bold: true, size: 52, color: "FFFFFF" })],
-      alignment: AlignmentType.CENTER,
-      shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
-      spacing: { before: 480, after: 120 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: org || "", size: 26, color: "FFFFFF" })],
-      alignment: AlignmentType.CENTER,
-      shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
-      spacing: { after: 120 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: date || "", size: 22, color: "FFFFFF" })],
-      alignment: AlignmentType.CENTER,
-      shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
-      spacing: { after: 480 },
-    }),
-  ];
-  sections.push({ children: titleChildren });
+  // Compact title banner — event name left, org + date right, all on one line
+  children.push(new Paragraph({
+    children: [
+      new TextRun({ text: eventName || "Event Brief", bold: true, size: 24, color: "FFFFFF" }),
+      new TextRun({ text: `   •   ${[org, date].filter(Boolean).join("  ·  ")}`, size: 20, color: "D6E4F0" }),
+    ],
+    shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
+    spacing: { before: 0, after: 160 },
+  }));
 
   docs.forEach((doc, di) => {
-    const children = [];
-
+    // Section divider banner — tighter than before
     children.push(new Paragraph({
-      children: [new TextRun({ text: titles[di].toUpperCase(), bold: true, size: 32, color: "FFFFFF" })],
+      children: [new TextRun({ text: titles[di].toUpperCase(), bold: true, size: 20, color: "FFFFFF" })],
       shading: { fill: ACCENT2, type: ShadingType.CLEAR, color: "auto" },
-      spacing: { before: 0, after: 240 },
+      spacing: { before: di === 0 ? 0 : 140, after: 100 },
     }));
 
     const lines = doc.split("\n");
@@ -240,9 +229,9 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
       if (/^```/.test(t)) { inCodeBlock = !inCodeBlock; i++; continue; }
       if (inCodeBlock) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: line, size: 18, color: "444444", font: "Courier New" })],
-          spacing: { before: 20, after: 20 },
-          indent: { left: 360 },
+          children: [new TextRun({ text: line, size: 16, color: "444444", font: "Courier New" })],
+          spacing: { before: 0, after: 0 },
+          indent: { left: 240 },
         }));
         i++; continue;
       }
@@ -252,7 +241,7 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
         while (i < lines.length && /^\|/.test(lines[i].trim())) { tableLines.push(lines[i]); i++; }
         if (tableLines.filter(l => !/^\|[-| :]+\|$/.test(l.trim())).length > 1) {
           children.push(buildTable(tableLines));
-          children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 120 } }));
+          children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 60 } }));
         }
         continue;
       }
@@ -261,37 +250,37 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
 
       if (/^# /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 28, color: ACCENT })],
+          children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 22, color: ACCENT })],
           heading: HeadingLevel.HEADING_1,
-          spacing: { before: 320, after: 120 },
-          border: { bottom: { color: LIGHT, size: 6, space: 1, style: BorderStyle.SINGLE } },
+          spacing: { before: 140, after: 60 },
+          border: { bottom: { color: LIGHT, size: 4, space: 1, style: BorderStyle.SINGLE } },
         }));
         i++; continue;
       }
 
       if (/^## /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 24, color: ACCENT })],
+          children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 20, color: ACCENT })],
           heading: HeadingLevel.HEADING_2,
-          spacing: { before: 240, after: 100 },
+          spacing: { before: 100, after: 40 },
         }));
         i++; continue;
       }
 
       if (/^### /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 22, color: ACCENT2 })],
+          children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 18, color: ACCENT2 })],
           heading: HeadingLevel.HEADING_3,
-          spacing: { before: 180, after: 80 },
+          spacing: { before: 80, after: 30 },
         }));
         i++; continue;
       }
 
       if (/^> /.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: stripInline(t.replace(/^> /, "")), italics: true, size: 18, color: "555555" })],
-          spacing: { before: 60, after: 60 },
-          indent: { left: 360 },
+          children: [new TextRun({ text: stripInline(t.replace(/^> /, "")), italics: true, size: 16, color: "555555" })],
+          spacing: { before: 20, after: 20 },
+          indent: { left: 240 },
           shading: { fill: "F5F9FC", type: ShadingType.CLEAR, color: "auto" },
         }));
         i++; continue;
@@ -299,39 +288,44 @@ app.post("/api/export-word", apiLimiter, async (req, res) => {
 
       if (/^[-*] /.test(t)) {
         children.push(new Paragraph({
-          children: parseInline(t.replace(/^[-*] /, ""), 20, "2d2d2d"),
+          children: parseInline(t.replace(/^[-*] /, ""), 18, "2d2d2d"),
           bullet: { level: 0 },
-          spacing: { before: 40, after: 40 },
+          spacing: { before: 20, after: 20 },
         }));
         i++; continue;
       }
 
       if (/^[📌🧑📺🗓🏢📸🏷🪧🔧🤝📱📣]/.test(t)) {
         children.push(new Paragraph({
-          children: [new TextRun({ text: t, bold: true, size: 24, color: ACCENT })],
-          spacing: { before: 240, after: 120 },
-          border: { bottom: { color: LIGHT, size: 4, space: 1, style: BorderStyle.SINGLE } },
+          children: [new TextRun({ text: t, bold: true, size: 20, color: ACCENT })],
+          spacing: { before: 120, after: 40 },
+          border: { bottom: { color: LIGHT, size: 3, space: 1, style: BorderStyle.SINGLE } },
         }));
         i++; continue;
       }
 
-      if (!t) {
-        children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 80 } }));
-        i++; continue;
-      }
+      // Skip blank lines — they add whitespace without adding content
+      if (!t) { i++; continue; }
 
       children.push(new Paragraph({
-        children: parseInline(t, 20, "2d2d2d"),
-        spacing: { after: 80 },
+        children: parseInline(t, 18, "2d2d2d"),
+        spacing: { after: 40 },
       }));
       i++;
     }
-
-    sections.push({ children });
   });
 
   try {
-    const document = new Document({ sections });
+    const document = new Document({
+      sections: [{
+        properties: {
+          page: {
+            margin: { top: 720, bottom: 720, left: 720, right: 720 },
+          },
+        },
+        children,
+      }],
+    });
     const buffer = await Packer.toBuffer(document);
     const filename = `${(eventName || "event").replace(/\s+/g, "_")}_brief.docx`;
 
