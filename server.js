@@ -102,8 +102,8 @@ app.post("/api/generate", apiLimiter, async (req, res) => {
     const [brief, staffing, checklist] = await Promise.all([
       // 1. Volunteer-facing brief — short, scannable, one page.
       anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 900,
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 800,
         messages: [{
           role: "user",
           content: `You are an event operations coordinator writing a one-page brief for day-of volunteers. Be concise — use short phrases, not full sentences. No tables, no equipment checklists, no escalation diagrams.
@@ -136,7 +136,7 @@ ${context}`,
 
       // 2. Staffing plan — coordinator reference with roster and room duties.
       anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 1000,
         messages: [{
           role: "user",
@@ -163,8 +163,8 @@ ${context}`,
 
       // 3. Day-of logistics checklist — time-blocked with owner names.
       anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 900,
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 800,
         messages: [{
           role: "user",
           content: `You are an expert event operations coordinator. Using the event details below, produce a Day-of Logistics Checklist organised by time block. Use [ ] for each item. Include the responsible person's name. Be brief — one line per item.
