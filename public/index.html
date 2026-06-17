@@ -371,7 +371,7 @@ document.addEventListener("change",e=>{
 async function generate(){
   saveStep();persistState();
   const errs=validateStep0();if(errs.length){showValErr(errs);return;}clearValErr();
-  const msgs=["Drafting volunteer brief…","Building staffing plan…","Generating run-of-show…","Creating logistics checklist…"];
+  const msgs=["Drafting volunteer brief…","Building run-of-show timeline…","Adding role assignments…","Finalising ops reference…"];
   let si=0;
   $("content").innerHTML=`<div class="gen"><div class="spin"></div><div class="gen-lbl">Building your planning docs</div><div class="gen-step" id="gs">Parsing event details…</div></div>`;
   const iv=setInterval(()=>{const el=$("gs");if(el)el.textContent=msgs[si=(si+1)%msgs.length];},1400);
@@ -381,7 +381,7 @@ async function generate(){
     const data=await res.json();
     if(data.error)throw new Error(data.error);
     clearInterval(iv);
-    generatedDocs=[data.brief,data.staffing,data.checklist];
+    generatedDocs=[data.brief,data.staffing];
     activeTab=0;
     renderOutput();
   }catch(e){
@@ -392,8 +392,8 @@ async function generate(){
 
 // ── Output ────────────────────────────────────────────────────────────────
 function renderOutput(){
-  const tabs=["Volunteer brief","Staffing plan","Checklist"];
-  $("hdrSub").textContent=`${S.eventName||"Event"} · ${S.date||"—"} · 3 documents ready`;
+  const tabs=["Volunteer brief","Ops reference"];
+  $("hdrSub").textContent=`${S.eventName||"Event"} · ${S.date||"—"} · ready`;
   $("prog").innerHTML="";
   $("content").innerHTML=`
   <div class="outwrap">
@@ -425,7 +425,7 @@ function doCopy(){
 async function doWord(){
   const b=$("wb");b.classList.add("loading");b.textContent="📄 Exporting…";
   try{
-    const res=await fetch("/api/export-word",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docs:generatedDocs,eventName:S.eventName,org:S.org,date:fmtD(S.date)})});
+    const res=await fetch("/api/export-word",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docs:[generatedDocs[0]],eventName:S.eventName,org:S.org,date:fmtD(S.date)})});
     if(!res.ok)throw new Error("Export failed");
     const blob=await res.blob();
     const url=URL.createObjectURL(blob);

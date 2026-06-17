@@ -4,10 +4,7 @@ const path = require("path");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const Anthropic = require("@anthropic-ai/sdk");
-const {
-  Document, Packer, Paragraph, TextRun, HeadingLevel,
-  Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle,
-} = require("docx");
+const { Document, Packer, Paragraph, TextRun, ShadingType, BorderStyle } = require("docx");
 
 // Fail fast if the API key is missing — avoids cryptic errors on first request.
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -91,8 +88,8 @@ function validateExportWord(body) {
 }
 
 // ── Generate documents ────────────────────────────────────────────────────────
-// Calls Claude in parallel for three documents: volunteer brief, staffing plan,
-// and day-of checklist. All three are returned in a single JSON response.
+// "brief" is the volunteer-facing one-pager exported to Word.
+// "ops" is a fuller coordinator reference shown in a preview tab only.
 app.post("/api/generate", apiLimiter, async (req, res) => {
   const validationError = validateGenerate(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
@@ -101,219 +98,176 @@ app.post("/api/generate", apiLimiter, async (req, res) => {
   const leadTime = Number(req.body.leadTime) || 60;
 
   try {
-    const [brief, staffing, checklist] = await Promise.all([
+    const [brief, ops] = await Promise.all([
+      // Volunteer-facing brief — short, scannable, one page target.
       anthropic.messages.create({
         model: "claude-sonnet-4-6",
-        max_tokens: 2048,
+        max_tokens: 900,
         messages: [{
           role: "user",
-          content: `You are an expert event operations coordinator. Using the event details below, produce a comprehensive Volunteer HQ Brief. Include these emoji-headed sections:\n\n📌 Room Assignments\n🧑‍💻 Technical Support Assignments (by room, using volunteer names and roles provided)\n📺 A/V & Tech Setup (setup owner, equipment, hybrid link if applicable)\n🗓 Run-of-Show Timeline (build a timed schedule using the agenda segments and start time)\n🏢 Overflow Room Plan (include contingency if overflow is not yet activated)\n📸 Recording & Photography (opt-out seating note, photo team duties, recommended shot list)\n🏷️ Check-In & Attendance (method, name tag details, tracker name and snapshot time)\n🪧 Signage & Materials (who places what, handouts)\n🔧 Room Setup & Arrival Plan (staggered arrival times per role, upon-arrival checklist)\n🤝 Special Guests (specific handling notes per guest)\n📱 On-Site Contact\n📣 Post-Event Actions (follow-up email, sharing, debrief)\n\nUse all names provided. Be specific and actionable. Output ONLY the document.\n\nEVENT DATA:\n${context}`,
+          content: `You are an event operations coordinator writing a one-page brief for day-of volunteers. Be concise — use short phrases, not full sentences. No tables, no equipment checklists, no escalation diagrams.
+
+Produce exactly this structure and nothing else:
+
+EVENT SUMMARY
+[Event name] | [Date] | [Start time – End time] | [Primary room] | [Expected attendees] attendees
+On-site contact: [Name] [Phone]
+[One line only if hybrid: Virtual link: ...]
+
+VOLUNTEER ROLES
+[For each volunteer: Name (Role, Room) — arrive by [arrival time]. One-line responsibility.]
+
+RUN OF SHOW
+[For each agenda segment: Time — Segment name (duration)
+  • Name: one short action phrase
+  • Name: one short action phrase
+  Only list volunteers who have something specific to do in that segment. Max 2–3 bullets per segment.]
+
+KEY NOTES
+[3 bullets max. Only genuinely important operational facts that don't fit above — e.g. who to call if A/V fails, opt-out names for photography, overflow room trigger. Nothing that repeats the timeline.]
+
+Output ONLY the document. No markdown headers with #. No extra sections.
+
+EVENT DATA:
+${context}`,
         }],
       }).then(r => r.content.map(b => b.text || "").join("")),
 
+      // Coordinator ops reference — fuller detail, preview tab only, not exported.
       anthropic.messages.create({
         model: "claude-sonnet-4-6",
-        max_tokens: 1500,
+        max_tokens: 1200,
         messages: [{
           role: "user",
-          content: `You are an expert event operations coordinator. Using the event details below, produce a clear Staffing Plan:\n\n1. Roster table — Name | Role | Room | Key Responsibilities\n2. Room-by-room breakdown with specific duties\n3. Escalation chain\n4. Staggered arrival timeline per person\n5. Contingency notes (overflow, A/V issues, late arrivals)\n\nOutput ONLY the document.\n\nEVENT DATA:\n${context}`,
-        }],
-      }).then(r => r.content.map(b => b.text || "").join("")),
-
-      anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        messages: [{
-          role: "user",
-          content: `You are an expert event operations coordinator. Using the event details below, produce a Day-of Logistics Checklist organized by time block:\n\n- Pre-arrival (T-${leadTime}min)\n- Setup (T-30min)\n- Final sweep (T-10min)\n- Doors open\n- One section per agenda segment (by name)\n- Wrap-up\n- Post-event close-out\n\nEach item as [ ]. Include owner names where known. Output ONLY the checklist.\n\nEVENT DATA:\n${context}`,
+          content: `You are an expert event operations coordinator. Using the event details below, produce a concise coordinator ops reference covering: staffing roster, room-by-room duties, escalation contact, arrival timeline, and key contingency notes. Use bullet points. Be specific but brief.\n\nEVENT DATA:\n${context}`,
         }],
       }).then(r => r.content.map(b => b.text || "").join("")),
     ]);
 
-    res.json({ brief, staffing, checklist });
+    res.json({ brief, staffing: ops, checklist: `Pre-arrival (T-${leadTime}min) checklist is included in the ops reference tab.` });
   } catch (e) {
-    // Log the full error server-side; return only a generic message to the client
-    // so internal details (model names, stack traces) are never exposed.
     console.error("[/api/generate]", e);
     res.status(500).json({ error: "Document generation failed. Please try again." });
   }
 });
 
 // ── Export to Word ────────────────────────────────────────────────────────────
-// Converts the three Claude-generated markdown strings into a styled .docx file
-// using the `docx` library, then streams it directly to the client.
+// Exports only docs[0] (the volunteer brief). Volunteer names are highlighted
+// in accent blue so each person can visually scan to their own lines.
 app.post("/api/export-word", apiLimiter, async (req, res) => {
   const validationError = validateExportWord(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
 
   const { docs, eventName, org, date } = req.body;
 
-  const ACCENT = "1F4E79";   // dark navy
-  const ACCENT2 = "2E74B5";  // mid blue
-  const LIGHT = "D6E4F0";    // light blue tint
+  const ACCENT = "1F4E79";   // dark navy — headings, section labels
+  const NAME  = "2E74B5";   // mid blue — volunteer names
+  const LIGHT = "D6E4F0";   // light blue — rule lines
 
-  const titles = ["Volunteer HQ Brief", "Staffing Plan", "Logistics Checklist"];
-
-  function stripInline(text) {
-    return text.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1");
+  // Build a set of volunteer first+last names from the eventName field isn't
+  // available here, so we extract them from the doc text itself: any token
+  // that appears before a colon at the start of a bullet is treated as a name.
+  function extractNames(text) {
+    const names = new Set();
+    for (const line of text.split("\n")) {
+      // Match "Name:" at start of a bullet (any bullet char) or at start of a line
+      const m = line.match(/^[\s•\-*]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?):/);
+      if (m) names.add(m[1].trim());
+    }
+    return names;
   }
 
-  function parseInline(text, baseSize = 20, baseColor = "2d2d2d") {
-    const cleaned = text.replace(/`([^`]+)`/g, "$1").replace(/\*(?!\*)([^*]+)\*(?!\*)/g, "$1");
-    const runs = [];
-    cleaned.split(/(\*\*[^*]+\*\*)/).forEach(part => {
-      const m = part.match(/^\*\*([^*]+)\*\*$/);
-      if (m) runs.push(new TextRun({ text: m[1], bold: true, size: baseSize, color: baseColor }));
-      else if (part) runs.push(new TextRun({ text: part, size: baseSize, color: baseColor }));
-    });
-    return runs.length ? runs : [new TextRun({ text: "", size: baseSize })];
+  // Split a line into TextRun segments, bolding+coloring any known volunteer name.
+  function parseWithNames(text, names, baseSize = 18) {
+    if (!names.size) return [new TextRun({ text, size: baseSize, color: "2d2d2d" })];
+    const escaped = [...names].map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const parts = text.split(new RegExp(`(${escaped})`, "g"));
+    return parts.filter(p => p).map(p =>
+      names.has(p)
+        ? new TextRun({ text: p, bold: true, size: baseSize, color: NAME })
+        : new TextRun({ text: p, size: baseSize, color: "2d2d2d" })
+    );
   }
 
-  function buildTable(lines) {
-    const rows = lines.filter(l => !/^\|[-| :]+\|$/.test(l.trim()));
-    return new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: rows.map((line, ri) => {
-        const cols = line.trim().split("|").filter((_, i, a) => i > 0 && i < a.length - 1).map(c => c.trim());
-        const isHeader = ri === 0;
-        return new TableRow({
-          tableHeader: isHeader,
-          children: cols.map(col => new TableCell({
-            shading: isHeader ? { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" }
-                              : (ri % 2 === 0 ? { fill: "F5F9FC", type: ShadingType.CLEAR, color: "auto" } : undefined),
-            margins: { top: 80, bottom: 80, left: 120, right: 120 },
-            children: [new Paragraph({
-              children: [new TextRun({
-                text: stripInline(col),
-                bold: isHeader,
-                color: isHeader ? "FFFFFF" : "2d2d2d",
-                size: 18,
-              })],
-            })],
-          })),
-        });
-      }),
-    });
-  }
-
-  // All content goes in one section so there's no wasted title page.
-  // Narrow margins (720 twips = 0.5 in) recover ~1.5 inches of vertical space.
+  const doc = docs[0];
+  const names = extractNames(doc);
   const children = [];
 
-  // Compact title banner — event name left, org + date right, all on one line
+  // Single-line title banner
   children.push(new Paragraph({
     children: [
       new TextRun({ text: eventName || "Event Brief", bold: true, size: 24, color: "FFFFFF" }),
       new TextRun({ text: `   •   ${[org, date].filter(Boolean).join("  ·  ")}`, size: 20, color: "D6E4F0" }),
     ],
     shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
-    spacing: { before: 0, after: 160 },
+    spacing: { before: 0, after: 140 },
   }));
 
-  docs.forEach((doc, di) => {
-    // Section divider banner — tighter than before
-    children.push(new Paragraph({
-      children: [new TextRun({ text: titles[di].toUpperCase(), bold: true, size: 20, color: "FFFFFF" })],
-      shading: { fill: ACCENT2, type: ShadingType.CLEAR, color: "auto" },
-      spacing: { before: di === 0 ? 0 : 140, after: 100 },
-    }));
+  for (const line of doc.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
 
-    const lines = doc.split("\n");
-    let i = 0;
-    let inCodeBlock = false;
-
-    while (i < lines.length) {
-      const line = lines[i];
-      const t = line.trim();
-
-      if (/^```/.test(t)) { inCodeBlock = !inCodeBlock; i++; continue; }
-      if (inCodeBlock) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: line, size: 16, color: "444444", font: "Courier New" })],
-          spacing: { before: 0, after: 0 },
-          indent: { left: 240 },
-        }));
-        i++; continue;
-      }
-
-      if (/^\|/.test(t)) {
-        const tableLines = [];
-        while (i < lines.length && /^\|/.test(lines[i].trim())) { tableLines.push(lines[i]); i++; }
-        if (tableLines.filter(l => !/^\|[-| :]+\|$/.test(l.trim())).length > 1) {
-          children.push(buildTable(tableLines));
-          children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 60 } }));
-        }
-        continue;
-      }
-
-      if (/^\|[-| :]+\|$/.test(t) || /^---+$/.test(t)) { i++; continue; }
-
-      if (/^# /.test(t)) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 22, color: ACCENT })],
-          heading: HeadingLevel.HEADING_1,
-          spacing: { before: 140, after: 60 },
-          border: { bottom: { color: LIGHT, size: 4, space: 1, style: BorderStyle.SINGLE } },
-        }));
-        i++; continue;
-      }
-
-      if (/^## /.test(t)) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 20, color: ACCENT })],
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 40 },
-        }));
-        i++; continue;
-      }
-
-      if (/^### /.test(t)) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 18, color: ACCENT2 })],
-          heading: HeadingLevel.HEADING_3,
-          spacing: { before: 80, after: 30 },
-        }));
-        i++; continue;
-      }
-
-      if (/^> /.test(t)) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: stripInline(t.replace(/^> /, "")), italics: true, size: 16, color: "555555" })],
-          spacing: { before: 20, after: 20 },
-          indent: { left: 240 },
-          shading: { fill: "F5F9FC", type: ShadingType.CLEAR, color: "auto" },
-        }));
-        i++; continue;
-      }
-
-      if (/^[-*] /.test(t)) {
-        children.push(new Paragraph({
-          children: parseInline(t.replace(/^[-*] /, ""), 18, "2d2d2d"),
-          bullet: { level: 0 },
-          spacing: { before: 20, after: 20 },
-        }));
-        i++; continue;
-      }
-
-      if (/^[📌🧑📺🗓🏢📸🏷🪧🔧🤝📱📣]/.test(t)) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: t, bold: true, size: 20, color: ACCENT })],
-          spacing: { before: 120, after: 40 },
-          border: { bottom: { color: LIGHT, size: 3, space: 1, style: BorderStyle.SINGLE } },
-        }));
-        i++; continue;
-      }
-
-      // Skip blank lines — they add whitespace without adding content
-      if (!t) { i++; continue; }
-
+    // ALL-CAPS section headers (e.g. "EVENT SUMMARY", "RUN OF SHOW")
+    if (/^[A-Z][A-Z\s]{3,}$/.test(t)) {
       children.push(new Paragraph({
-        children: parseInline(t, 18, "2d2d2d"),
-        spacing: { after: 40 },
+        children: [new TextRun({ text: t, bold: true, size: 20, color: "FFFFFF" })],
+        shading: { fill: ACCENT, type: ShadingType.CLEAR, color: "auto" },
+        spacing: { before: 120, after: 60 },
       }));
-      i++;
+      continue;
     }
-  });
+
+    // Markdown headings
+    if (/^### /.test(t)) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: t.replace(/^### /, ""), bold: true, size: 18, color: ACCENT })],
+        spacing: { before: 80, after: 30 },
+      }));
+      continue;
+    }
+    if (/^## /.test(t)) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: t.replace(/^## /, ""), bold: true, size: 20, color: ACCENT })],
+        spacing: { before: 100, after: 40 },
+        border: { bottom: { color: LIGHT, size: 3, space: 1, style: BorderStyle.SINGLE } },
+      }));
+      continue;
+    }
+    if (/^# /.test(t)) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: t.replace(/^# /, ""), bold: true, size: 22, color: ACCENT })],
+        spacing: { before: 120, after: 50 },
+        border: { bottom: { color: LIGHT, size: 4, space: 1, style: BorderStyle.SINGLE } },
+      }));
+      continue;
+    }
+
+    // Time-block lines (e.g. "3:00 PM — Welcome & Intro (10 min)")
+    if (/^\d{1,2}:\d{2}/.test(t)) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: t, bold: true, size: 18, color: ACCENT })],
+        spacing: { before: 100, after: 20 },
+      }));
+      continue;
+    }
+
+    // Bullet lines — apply name highlighting
+    if (/^[•\-*]\s/.test(t)) {
+      const content = t.replace(/^[•\-*]\s+/, "");
+      children.push(new Paragraph({
+        children: parseWithNames(content, names, 18),
+        bullet: { level: 0 },
+        spacing: { before: 16, after: 16 },
+      }));
+      continue;
+    }
+
+    // Default paragraph — apply name highlighting
+    children.push(new Paragraph({
+      children: parseWithNames(t, names, 18),
+      spacing: { after: 36 },
+    }));
+  }
 
   try {
     const document = new Document({
