@@ -89,9 +89,12 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="hdr">
-    <h1>Event planning agent</h1>
-    <p id="hdrSub">Comprehensive intake — brief, staffing plan, run-of-show, and checklist.</p>
+  <div class="hdr" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+    <div>
+      <h1>Event planning agent</h1>
+      <p id="hdrSub">Comprehensive intake — brief, staffing plan, run-of-show, and checklist.</p>
+    </div>
+    <button class="bs" style="font-size:12px;padding:6px 12px;white-space:nowrap;margin-top:2px" onclick="clearForm()">Clear form</button>
   </div>
   <div class="prog" id="prog"></div>
   <div id="content"></div>
@@ -107,6 +110,34 @@ let step = 0;
 let savedRoster = null;
 let generatedDocs = null;
 let activeTab = 0;
+
+function clearForm() {
+  if (!confirm("Clear all form fields and start over?")) return;
+  Object.assign(S, {
+    eventName:"", org:"", instr:"", date:"", tstart:"", tend:"", att:"",
+    pr:"", pc:"", ov:true, ovr:"", oc:"", rn:"",
+    proj:true, mic:"handheld", hybrid:false, hlink:"", avo:"",
+    segs:[
+      {n:"Welcome & intro",d:"10",t:"lecture"},
+      {n:"Learning portion",d:"45",t:"lecture"},
+      {n:"Hands-on work",d:"30",t:"hands-on"},
+      {n:"Q&A",d:"15",t:"qa"},
+      {n:"Networking",d:"20",t:"networking"}
+    ],
+    vols:[{n:"",r:"Anchor",rm:"Primary"},{n:"",r:"Float",rm:"Primary"}],
+    cn:"", cp:"",
+    ci:"name-tags", ntp:"", atr:"", atm:"3:40 PM",
+    byod:true, hout:false, houtd:"", oo:"", pht:"",
+    entry:"", floor:"", prk:"", lt:"60", sgn:true, sgno:"",
+    guests:[{n:"",t:"",nt:""}],
+    pem:"", psh:"", htag:"", sown:"", notes:""
+  });
+  generatedDocs = null;
+  activeTab = 0;
+  step = 0;
+  localStorage.removeItem("epState");
+  render();
+}
 
 const S = {
   eventName:"", org:"", instr:"", date:"", tstart:"", tend:"", att:"",
