@@ -185,9 +185,9 @@ function buildCtx(){
 function p0(){ return `
 <div class="form-body"><div class="step-lbl">Step 1 of 6 — Event basics</div>
 <div class="g2">
-  <div class="field full"><label for="en">Event name</label><input id="en" value="${esc(S.eventName)}" placeholder="e.g. Microsoft AI Workshop"/></div>
-  <div class="field"><label for="og">Organizing body</label><input id="og" value="${esc(S.org)}" placeholder="e.g. Upskilling Labs"/></div>
-  <div class="field"><label for="ins">Instructor / speaker</label><input id="ins" value="${esc(S.instr)}" placeholder="e.g. Eric Brown"/></div>
+  <div class="field full"><label for="en">Event name</label><input id="en" value="${esc(S.eventName)}" placeholder="e.g. Tech Leadership Workshop"/></div>
+  <div class="field"><label for="og">Organizing body</label><input id="og" value="${esc(S.org)}" placeholder="e.g. Learning & Development"/></div>
+  <div class="field"><label for="ins">Instructor / speaker</label><input id="ins" value="${esc(S.instr)}" placeholder="e.g. Alex Johnson"/></div>
   <div class="field"><label for="ed">Event date</label><input type="date" id="ed" value="${S.date}"/></div>
   <div class="field"><label for="ea">Expected attendees</label><input type="number" id="ea" value="${S.att}" placeholder="e.g. 50"/></div>
   <div class="field"><label for="ts">Start time</label><input type="time" id="ts" value="${S.tstart}"/></div>
@@ -199,10 +199,10 @@ function p1(){ return `
 <div class="form-body"><div class="step-lbl">Step 2 of 6 — Rooms & A/V</div>
 <div class="sec-div">Rooms</div>
 <div class="g2">
-  <div class="field"><label for="prm">Primary room</label><input id="prm" value="${esc(S.pr)}" placeholder="e.g. Great Falls"/></div>
+  <div class="field"><label for="prm">Primary room</label><input id="prm" value="${esc(S.pr)}" placeholder="e.g. Main Conference Room"/></div>
   <div class="field"><label for="prc">Capacity</label><input type="number" id="prc" value="${S.pc}" placeholder="e.g. 32"/></div>
   <div class="field full"><label class="cbr"><input type="checkbox" id="hov" ${S.ov?"checked":""}/> Overflow / breakout room</label></div>
-  ${S.ov?`<div class="field" id="orFld"><label for="ovr">Overflow room name</label><input id="ovr" value="${esc(S.ovr)}" placeholder="e.g. York Training Lab"/></div>
+  ${S.ov?`<div class="field" id="orFld"><label for="ovr">Overflow room name</label><input id="ovr" value="${esc(S.ovr)}" placeholder="e.g. Breakout Room B"/></div>
   <div class="field" id="ocFld"><label for="ovc">Overflow capacity</label><input type="number" id="ovc" value="${S.oc}" placeholder="e.g. 24"/></div>`:""}
   <div class="field full"><label for="rnote">Room relationship note</label><input id="rnote" value="${esc(S.rn)}" placeholder="e.g. Directly across the hall on same floor"/></div>
 </div>
@@ -212,7 +212,7 @@ function p1(){ return `
   <div class="field"><label for="mict">Microphone type</label>
     <select id="mict">${["handheld","lapel","headset","podium","none"].map(t=>`<option ${S.mic===t?"selected":""}>${t}</option>`).join("")}</select>
   </div>
-  <div class="field"><label for="avow">A/V setup owner</label><input id="avow" value="${esc(S.avo)}" placeholder="e.g. Rudy"/></div>
+  <div class="field"><label for="avow">A/V setup owner</label><input id="avow" value="${esc(S.avo)}" placeholder="e.g. Sam"/></div>
   <div class="field full"><label class="cbr"><input type="checkbox" id="hyb" ${S.hybrid?"checked":""}/> Hybrid / virtual component (Teams, Zoom…)</label></div>
   ${S.hybrid?`<div class="field full"><label for="hl">Virtual meeting link</label><input id="hl" value="${esc(S.hlink)}" placeholder="https://teams.microsoft.com/…"/></div>`:""}
 </div>
@@ -253,8 +253,8 @@ function p3(){
 <div class="dl" id="voll">${rows}</div>
 <button class="addb" onclick="addVol()">+ Add volunteer</button>
 <div class="g2" style="margin-top:6px">
-  <div class="field"><label for="ctn">On-site contact name</label><input id="ctn" value="${esc(S.cn)}" placeholder="e.g. Afnan Adam"/></div>
-  <div class="field"><label for="ctp">Contact phone</label><input id="ctp" value="${esc(S.cp)}" placeholder="e.g. (571) 332-7473"/></div>
+  <div class="field"><label for="ctn">On-site contact name</label><input id="ctn" value="${esc(S.cn)}" placeholder="e.g. Jordan Smith"/></div>
+  <div class="field"><label for="ctp">Contact phone</label><input id="ctp" value="${esc(S.cp)}" placeholder="e.g. (555) 012-3456"/></div>
 </div>
 <div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
 
@@ -264,8 +264,8 @@ function p4(){
 <div class="sec-div">Check-in</div>
 <div class="field"><label>Check-in method</label><div class="rg" role="group" aria-label="Check-in method">${ci}</div></div>
 <div class="g2">
-  <div class="field"><label for="ntp">Name tags prepared by</label><input id="ntp" value="${esc(S.ntp)}" placeholder="e.g. Microsoft / Jennifer"/></div>
-  <div class="field"><label for="atr">Attendance tracked by</label><input id="atr" value="${esc(S.atr)}" placeholder="e.g. Jennifer"/></div>
+  <div class="field"><label for="ntp">Name tags prepared by</label><input id="ntp" value="${esc(S.ntp)}" placeholder="e.g. Events Team / Morgan"/></div>
+  <div class="field"><label for="atr">Attendance tracked by</label><input id="atr" value="${esc(S.atr)}" placeholder="e.g. Morgan"/></div>
   <div class="field"><label for="atm">Attendance snapshot time</label><input id="atm" value="${esc(S.atm)}" placeholder="e.g. 3:40 PM"/></div>
 </div>
 <div class="sec-div">Materials & tech</div>
@@ -276,8 +276,8 @@ function p4(){
 </div>
 <div class="sec-div">Recording & photography</div>
 <div class="g2">
-  <div class="field full"><label for="oo">Recording / photo opt-outs (names)</label><input id="oo" value="${esc(S.oo)}" placeholder="e.g. Mehdi Nadoushan, Paul Maudassen"/></div>
-  <div class="field full"><label for="pht">Photography team</label><input id="pht" value="${esc(S.pht)}" placeholder="e.g. Diana, Aaron"/></div>
+  <div class="field full"><label for="oo">Recording / photo opt-outs (names)</label><input id="oo" value="${esc(S.oo)}" placeholder="e.g. Jane Doe, John Smith"/></div>
+  <div class="field full"><label for="pht">Photography team</label><input id="pht" value="${esc(S.pht)}" placeholder="e.g. Taylor, Riley"/></div>
 </div>
 <div class="nav"><button class="bs" onclick="prv()">← Back</button><button class="bp" onclick="nxt()">Next →</button></div></div>`; }
 
@@ -298,17 +298,17 @@ function p5(){
 <div class="g2">
   <div class="field"><label for="lt">Volunteer arrival lead time (min)</label><input type="number" id="lt" value="${S.lt}" placeholder="60"/></div>
   <div class="field"><label class="cbr" style="margin-top:18px"><input type="checkbox" id="hsgn" ${S.sgn?"checked":""}/> Signage needed</label></div>
-  ${S.sgn?`<div class="field full"><label for="sgno">Signage placed by</label><input id="sgno" value="${esc(S.sgno)}" placeholder="e.g. Sandra"/></div>`:""}
+  ${S.sgn?`<div class="field full"><label for="sgno">Signage placed by</label><input id="sgno" value="${esc(S.sgno)}" placeholder="e.g. Casey"/></div>`:""}
 </div>
 <div class="sec-div">Special guests</div>
 <div class="dl" id="gstl">${gst}</div>
 <button class="addb" onclick="addG()">+ Add special guest</button>
 <div class="sec-div" style="margin-top:6px">Post-event & social</div>
 <div class="g2">
-  <div class="field"><label for="pem">Follow-up email owner</label><input id="pem" value="${esc(S.pem)}" placeholder="e.g. Afnan"/></div>
+  <div class="field"><label for="pem">Follow-up email owner</label><input id="pem" value="${esc(S.pem)}" placeholder="e.g. Jordan"/></div>
   <div class="field"><label for="psh">What gets shared post-event</label><input id="psh" value="${esc(S.psh)}" placeholder="e.g. Slides, recording link"/></div>
-  <div class="field"><label for="htag">Event hashtag</label><input id="htag" value="${esc(S.htag)}" placeholder="e.g. #UpskillingLabs"/></div>
-  <div class="field"><label for="so">Social / live updates owner</label><input id="so" value="${esc(S.sown)}" placeholder="e.g. Diana"/></div>
+  <div class="field"><label for="htag">Event hashtag</label><input id="htag" value="${esc(S.htag)}" placeholder="e.g. #TeamEvent2025"/></div>
+  <div class="field"><label for="so">Social / live updates owner</label><input id="so" value="${esc(S.sown)}" placeholder="e.g. Taylor"/></div>
 </div>
 <div class="field" style="margin-top:4px"><label for="notes">Additional notes</label><textarea id="notes" placeholder="Anything else the team should know…">${esc(S.notes)}</textarea></div>
 <div style="font-size:12px;color:var(--text2);background:var(--bg2);border:.5px solid var(--border);border-radius:var(--radius);padding:9px 12px;margin-top:8px;line-height:1.6">
